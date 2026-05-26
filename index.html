@@ -4,9 +4,9 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Claude – PoC – </title>
+  <title>AI Chat – PoC – </title>
   <script>
-    // Título dinámico: "Claude – PoC – AAAAMMDD.HHmm"
+    // Título dinámico: "AI Chat – PoC – AAAAMMDD.HHmm"
     (function () {
       const now = new Date();
       const pad = n => String(n).padStart(2, "0");
@@ -16,7 +16,7 @@
         pad(now.getDate()) + "." +
         pad(now.getHours()) +
         pad(now.getMinutes());
-      document.querySelector("title").textContent = "Claude – PoC – " + stamp;
+      document.querySelector("title").textContent = "AI Chat – PoC – " + stamp;
     })();
   </script>
   <link
@@ -478,6 +478,50 @@
     }
     .key-status.ok { color: #4caf6e; }
     .key-status.missing { color: #e8a87c; }
+
+    /* ── Provider / Model selects ── */
+    .settings-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+    @media (max-width: 560px) { .settings-grid { grid-template-columns: 1fr; } }
+
+    .settings-field {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+
+    select.settings-select, input.settings-input-sm {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 7px 10px;
+      font-family: var(--mono);
+      font-size: 12px;
+      color: var(--text);
+      outline: none;
+      transition: border-color .15s;
+      width: 100%;
+    }
+    select.settings-select { cursor: pointer; }
+    select.settings-select:focus,
+    input.settings-input-sm:focus { border-color: var(--accent2); }
+
+    .provider-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      font-family: var(--mono);
+      font-size: 10px;
+      padding: 2px 7px;
+      border-radius: 4px;
+      background: #1a2230;
+      border: 1px solid var(--border);
+      color: var(--accent2);
+      margin-left: 6px;
+    }
   </style>
 </head>
 
@@ -485,7 +529,8 @@
 
   <header>
     <div class="logo">✦</div>
-    <h1>Claude · PoC</h1>
+    <h1 id="header-title">AI Chat · PoC</h1>
+    <span id="provider-badge" class="provider-badge">anthropic</span>
 
     <span class="stat-sep">·</span>
 
@@ -509,14 +554,39 @@
   <!-- Settings panel (below header) -->
   <div id="settings-panel">
     <div class="settings-inner">
-      <span class="settings-label">API Key de Anthropic</span>
+
+      <!-- Fila 1: Proveedor + Modelo -->
+      <div class="settings-grid">
+        <div class="settings-field">
+          <span class="settings-label">Proveedor</span>
+          <select id="provider-select" class="settings-select">
+            <option value="anthropic">Anthropic (via Worker)</option>
+            <option value="github">GitHub Models</option>
+            <option value="openai">OpenAI compatible (custom)</option>
+          </select>
+        </div>
+        <div class="settings-field">
+          <span class="settings-label">Modelo</span>
+          <input id="model-input" class="settings-input-sm" type="text" placeholder="nombre del modelo" autocomplete="off" spellcheck="false" />
+        </div>
+      </div>
+
+      <!-- Fila 2: API Key -->
+      <span class="settings-label">API Key / Token</span>
       <div class="settings-row">
-        <input id="api-key-input" type="text" placeholder="sk-ant-api03-…" autocomplete="off" spellcheck="false" style="-webkit-text-security:disc" />
+        <input id="api-key-input" type="text" placeholder="sk-ant-api03-… / ghp_… / sk-…" autocomplete="off" spellcheck="false" style="-webkit-text-security:disc" />
         <button id="toggle-key-btn" title="Mostrar/ocultar" style="background:none;border:1px solid var(--border);border-radius:6px;color:var(--muted);cursor:pointer;width:32px;height:34px;display:grid;place-items:center;font-size:13px;flex-shrink:0">👁</button>
         <button id="save-key-btn">Guardar</button>
         <button id="clear-key-btn" title="Borrar key">✕</button>
       </div>
       <span class="key-status" id="key-status">Sin key configurada</span>
+
+      <!-- Fila 3: Worker URL (solo Anthropic) -->
+      <div id="worker-url-row" class="settings-field">
+        <span class="settings-label">Worker URL (Anthropic)</span>
+        <input id="worker-url-input" class="settings-input-sm" type="text" placeholder="https://…workers.dev/v1/messages" autocomplete="off" spellcheck="false" />
+      </div>
+
     </div>
   </div>
 
@@ -545,67 +615,120 @@
 
   <script>
     // ══════════════════════════════════════════
-    //  CONFIGURACIÓN  ← única línea a cambiar
+    //  DEFAULTS  ← se pueden cambiar acá o desde el panel ⚙
     // ══════════════════════════════════════════
-    // ── Apuntá esto a tu Cloudflare Worker después de deployarlo ──
-    const WORKER_URL = "https://muddy-wildflower-c8f9.claudioabril1000.workers.dev/v1/messages";
-    const MODEL = "claude-sonnet-4-6";
+    const DEFAULT_WORKER_URL = "https://muddy-wildflower-c8f9.claudioabril1000.workers.dev/v1/messages";
+    const DEFAULT_PROVIDER   = "anthropic";   // "anthropic" | "github" | "openai"
+    const DEFAULT_MODEL      = "claude-sonnet-4-6";
     const SYSTEM = "Eres un asistente útil y conciso. Respondés en el mismo idioma del usuario.";
+
+    // Modelos por defecto por proveedor
+    const DEFAULT_MODELS = {
+      anthropic: "claude-sonnet-4-6",
+      github:    "gpt-4o-mini",
+      openai:    "gpt-4o-mini",
+    };
+
+    // Endpoints fijos por proveedor (excepto anthropic que usa el Worker)
+    const PROVIDER_ENDPOINTS = {
+      github: "https://models.inference.ai.azure.com/chat/completions",
+      openai: "https://api.openai.com/v1/chat/completions",
+    };
     // ══════════════════════════════════════════
 
-    const messagesEl = document.getElementById("messages");
-    const emptyEl = document.getElementById("empty");
-    const inputEl = document.getElementById("input");
-    const sendBtn = document.getElementById("send");
-    const dotEl = document.getElementById("dot");
-    const statusEl = document.getElementById("status-text");
-    const errorBar = document.getElementById("error-bar");
+    const messagesEl   = document.getElementById("messages");
+    const emptyEl      = document.getElementById("empty");
+    const inputEl      = document.getElementById("input");
+    const sendBtn      = document.getElementById("send");
+    const dotEl        = document.getElementById("dot");
+    const statusEl     = document.getElementById("status-text");
+    const errorBar     = document.getElementById("error-bar");
+    const headerBadge  = document.getElementById("provider-badge");
 
-    // ── Settings / API Key ──
-    const settingsBtn   = document.getElementById("settings-btn");
-    const settingsPanel = document.getElementById("settings-panel");
-    const apiKeyInput   = document.getElementById("api-key-input");
-    const saveKeyBtn    = document.getElementById("save-key-btn");
-    const clearKeyBtn   = document.getElementById("clear-key-btn");
-    const toggleKeyBtn  = document.getElementById("toggle-key-btn");
-    const keyStatus     = document.getElementById("key-status");
+    // ── Settings refs ──
+    const settingsBtn     = document.getElementById("settings-btn");
+    const settingsPanel   = document.getElementById("settings-panel");
+    const apiKeyInput     = document.getElementById("api-key-input");
+    const saveKeyBtn      = document.getElementById("save-key-btn");
+    const clearKeyBtn     = document.getElementById("clear-key-btn");
+    const toggleKeyBtn    = document.getElementById("toggle-key-btn");
+    const keyStatus       = document.getElementById("key-status");
+    const providerSelect  = document.getElementById("provider-select");
+    const modelInput      = document.getElementById("model-input");
+    const workerUrlInput  = document.getElementById("worker-url-input");
+    const workerUrlRow    = document.getElementById("worker-url-row");
 
-    const LS_KEY = "poc_anthropic_key";
+    // ── LocalStorage keys ──
+    const LS_KEY      = "poc_api_key";
+    const LS_PROVIDER = "poc_provider";
+    const LS_MODEL    = "poc_model";
+    const LS_WORKER   = "poc_worker_url";
 
-    function loadKey() {
-      return localStorage.getItem(LS_KEY) || "";
+    // ── Persistence helpers ──
+    const load  = k       => localStorage.getItem(k) || "";
+    const save  = (k, v)  => v ? localStorage.setItem(k, v) : localStorage.removeItem(k);
+
+    function getProvider()  { return load(LS_PROVIDER) || DEFAULT_PROVIDER; }
+    function getModel()     { return load(LS_MODEL)    || DEFAULT_MODELS[getProvider()] || DEFAULT_MODEL; }
+    function getWorkerUrl() { return load(LS_WORKER)   || DEFAULT_WORKER_URL; }
+    function getApiKey()    { return load(LS_KEY); }
+
+    // ── Actualizar badge del header ──
+    function updateBadge() {
+      const p = getProvider();
+      const m = getModel();
+      headerBadge.textContent = `${p} · ${m}`;
     }
 
-    function saveKey(k) {
-      if (k) localStorage.setItem(LS_KEY, k);
-      else    localStorage.removeItem(LS_KEY);
+    // ── Mostrar/ocultar Worker URL según proveedor ──
+    function onProviderChange() {
+      const p = providerSelect.value;
+      workerUrlRow.style.display = p === "anthropic" ? "" : "none";
+      // sugerir modelo por defecto si el campo está vacío o era de otro proveedor
+      if (!modelInput.value || Object.values(DEFAULT_MODELS).includes(modelInput.value)) {
+        modelInput.value = DEFAULT_MODELS[p] || "";
+      }
+    }
+    providerSelect.addEventListener("change", onProviderChange);
+
+    // ── Cargar estado guardado en el panel ──
+    function loadSettingsPanel() {
+      providerSelect.value   = getProvider();
+      modelInput.value       = getModel();
+      workerUrlInput.value   = getWorkerUrl();
+      apiKeyInput.value      = getApiKey();
+      onProviderChange();
+      refreshKeyStatus();
     }
 
     function refreshKeyStatus() {
-      const k = loadKey();
+      const k = getApiKey();
       if (k) {
         keyStatus.textContent = "✓ Key configurada (" + k.slice(0, 14) + "…)";
-        keyStatus.className = "key-status ok";
+        keyStatus.className   = "key-status ok";
         settingsBtn.classList.add("active");
       } else {
         keyStatus.textContent = "Sin key configurada";
-        keyStatus.className = "key-status missing";
+        keyStatus.className   = "key-status missing";
         settingsBtn.classList.remove("active");
       }
     }
 
     // Init
-    apiKeyInput.value = loadKey();
-    refreshKeyStatus();
+    loadSettingsPanel();
+    updateBadge();
 
     settingsBtn.addEventListener("click", () => {
       settingsPanel.classList.toggle("open");
     });
 
     saveKeyBtn.addEventListener("click", () => {
-      const val = apiKeyInput.value.trim();
-      saveKey(val);
+      save(LS_KEY,      apiKeyInput.value.trim());
+      save(LS_PROVIDER, providerSelect.value);
+      save(LS_MODEL,    modelInput.value.trim());
+      save(LS_WORKER,   workerUrlInput.value.trim());
       refreshKeyStatus();
+      updateBadge();
       settingsPanel.classList.remove("open");
     });
 
@@ -617,30 +740,91 @@
 
     clearKeyBtn.addEventListener("click", () => {
       apiKeyInput.value = "";
-      saveKey("");
+      save(LS_KEY, "");
       refreshKeyStatus();
     });
 
-    const history = [];   // {role, content}[]
-    let busy = false;
+    // ══════════════════════════════════════════
+    //  Construcción de request según proveedor
+    // ══════════════════════════════════════════
+    function buildRequest(history) {
+      const provider = getProvider();
+      const model    = getModel();
+      const apiKey   = getApiKey();
 
-    // ── Token counters ──
-    let totalIn = 0;
-    let totalOut = 0;
-
-    const statTokens = document.getElementById("stat-tokens");
-    const statIn = document.getElementById("stat-in");
-    const statOut = document.getElementById("stat-out");
-
-    function fmt(n) {
-      return n >= 1000 ? (n / 1000).toFixed(1) + "k" : String(n);
+      if (provider === "anthropic") {
+        // ── Formato Anthropic Messages API ──
+        return {
+          url: getWorkerUrl(),
+          headers: {
+            "Content-Type":       "application/json",
+            "anthropic-version":  "2023-06-01",
+            ...(apiKey ? { "x-user-api-key": apiKey } : {}),
+          },
+          body: JSON.stringify({
+            model,
+            max_tokens: 1024,
+            system: SYSTEM,
+            messages: history,
+          }),
+        };
+      } else {
+        // ── Formato OpenAI Chat Completions (GitHub Models, OpenAI, etc.) ──
+        // Convertir historial al formato OpenAI (role: user/assistant)
+        const oaiMessages = [
+          { role: "system", content: SYSTEM },
+          ...history.map(m => ({ role: m.role === "assistant" ? "assistant" : "user", content: m.content })),
+        ];
+        return {
+          url: PROVIDER_ENDPOINTS[provider] || PROVIDER_ENDPOINTS.openai,
+          headers: {
+            "Content-Type":  "application/json",
+            "Authorization": `Bearer ${apiKey}`,
+          },
+          body: JSON.stringify({
+            model,
+            max_tokens: 1024,
+            messages: oaiMessages,
+          }),
+        };
+      }
     }
 
+    // ── Extraer texto y usage de la respuesta según proveedor ──
+    function parseResponse(data) {
+      const provider = getProvider();
+      if (provider === "anthropic") {
+        return {
+          text:  data.content?.[0]?.text ?? "(sin respuesta)",
+          usage: data.usage ?? null,
+        };
+      } else {
+        // OpenAI-compatible
+        const text  = data.choices?.[0]?.message?.content ?? "(sin respuesta)";
+        const usage = data.usage
+          ? { input_tokens: data.usage.prompt_tokens, output_tokens: data.usage.completion_tokens }
+          : null;
+        return { text, usage };
+      }
+    }
+
+    // ══════════════════════════════════════════
+    const history = [];
+    let busy = false;
+    let totalIn = 0, totalOut = 0;
+
+    const statTokens = document.getElementById("stat-tokens");
+    const statIn     = document.getElementById("stat-in");
+    const statOut    = document.getElementById("stat-out");
+
+    function fmt(n) { return n >= 1000 ? (n / 1000).toFixed(1) + "k" : String(n); }
+
     function updateTokens(usage) {
-      totalIn += usage.input_tokens ?? 0;
+      if (!usage) return;
+      totalIn  += usage.input_tokens  ?? 0;
       totalOut += usage.output_tokens ?? 0;
-      statIn.textContent = fmt(totalIn);
-      statOut.textContent = fmt(totalOut);
+      statIn.textContent     = fmt(totalIn);
+      statOut.textContent    = fmt(totalOut);
       statTokens.textContent = fmt(totalIn + totalOut);
       [statTokens, statIn, statOut].forEach(el => {
         el.classList.add("flash");
@@ -648,186 +832,105 @@
       });
     }
 
-    // ── Auto-resize textarea ──
     inputEl.addEventListener("input", () => {
       inputEl.style.height = "auto";
       inputEl.style.height = Math.min(inputEl.scrollHeight, 160) + "px";
     });
 
-    // ── Enter to send ──
     inputEl.addEventListener("keydown", e => {
-      if (e.key === "Enter" && !e.shiftKey) {
-        e.preventDefault();
-        send();
-      }
+      if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }
     });
-
     sendBtn.addEventListener("click", send);
 
-    // ── Render a message bubble ──
     function addBubble(role, text) {
       emptyEl.style.display = "none";
-
       const msg = document.createElement("div");
-      msg.className = `msg ${role}`;
-
-      const av = document.createElement("div");
-      av.className = "avatar";
+      msg.className = `msg ${role === "assistant" ? "claude" : role}`;
+      const av  = document.createElement("div");
+      av.className  = "avatar";
       av.textContent = role === "user" ? "TÚ" : "AI";
-
       const bub = document.createElement("div");
-      bub.className = "bubble";
+      bub.className  = "bubble";
       bub.textContent = text;
-
       msg.appendChild(av);
       msg.appendChild(bub);
       messagesEl.appendChild(msg);
       messagesEl.scrollTop = messagesEl.scrollHeight;
-      return bub;   // returned so we can stream into it
+      return bub;
     }
 
-    // ── Typing indicator ──
     function addTyping() {
       const msg = document.createElement("div");
-      msg.className = "msg claude";
-      msg.id = "typing-msg";
-
-      const av = document.createElement("div");
-      av.className = "avatar";
-      av.textContent = "AI";
-
-      const t = document.createElement("div");
-      t.className = "typing";
+      msg.className = "msg claude"; msg.id = "typing-msg";
+      const av = document.createElement("div"); av.className = "avatar"; av.textContent = "AI";
+      const t  = document.createElement("div"); t.className  = "typing";
       t.innerHTML = "<span></span><span></span><span></span>";
-
-      msg.appendChild(av);
-      msg.appendChild(t);
+      msg.appendChild(av); msg.appendChild(t);
       messagesEl.appendChild(msg);
       messagesEl.scrollTop = messagesEl.scrollHeight;
     }
+    function removeTyping() { document.getElementById("typing-msg")?.remove(); }
 
-    function removeTyping() {
-      document.getElementById("typing-msg")?.remove();
-    }
-
-    // ── Set UI state ──
     function setLoading(on) {
       busy = on;
-      sendBtn.disabled = on;
-      inputEl.disabled = on;
+      sendBtn.disabled = on; inputEl.disabled = on;
       dotEl.className = on ? "dot error" : "dot";
       statusEl.textContent = on ? "procesando…" : "listo";
       if (on) errorBar.style.display = "none";
     }
-
     function showError(msg) {
-      errorBar.textContent = "⚠ " + msg;
-      errorBar.style.display = "block";
-      dotEl.className = "dot error";
-      statusEl.textContent = "error";
+      errorBar.textContent = "⚠ " + msg; errorBar.style.display = "block";
+      dotEl.className = "dot error"; statusEl.textContent = "error";
     }
 
-    // ── Logger helper ──
     function log(level, ...args) {
-      const ts = new Date().toISOString().slice(11, 23); // HH:mm:ss.mmm
+      const ts = new Date().toISOString().slice(11, 23);
       const prefix = `[PoC ${ts}]`;
       if (level === "error") console.error(prefix, ...args);
       else if (level === "warn")  console.warn(prefix, ...args);
       else                        console.log(prefix, ...args);
     }
 
-    // ── Main send function ──
     async function send() {
       const text = inputEl.value.trim();
-      log("info", "send() llamado — texto:", text ? `"${text.slice(0,60)}…"` : "(vacío)");
-      if (!text || busy) {
-        log("warn", "send() abortado — texto vacío o busy=", busy);
-        return;
-      }
+      if (!text || busy) return;
 
-      inputEl.value = "";
-      inputEl.style.height = "auto";
-
+      inputEl.value = ""; inputEl.style.height = "auto";
       addBubble("user", text);
       history.push({ role: "user", content: text });
-      log("info", "Historia actualizada, turnos totales:", history.length);
+      setLoading(true); addTyping();
 
-      setLoading(true);
-      addTyping();
-
-      // ── Payload de la request ──
-      const payload = {
-        model: MODEL,
-        max_tokens: 1024,
-        system: SYSTEM,
-        messages: history,
-      };
-      const hasKey = !!loadKey();
-      log("info", "Enviando fetch →", WORKER_URL);
-      log("info", "Modelo:", MODEL, "| API key presente:", hasKey);
-      log("info", "Payload completo:", JSON.parse(JSON.stringify(payload)));
+      const req = buildRequest(history);
+      log("info", "Provider:", getProvider(), "| Model:", getModel());
+      log("info", "→", req.url);
 
       try {
-        const res = await fetch(WORKER_URL, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "anthropic-version": "2023-06-01",
-            ...(hasKey ? { "x-user-api-key": loadKey() } : {}),
-          },
-          body: JSON.stringify(payload),
-        });
-
-        log("info", "Respuesta recibida — status:", res.status, res.statusText);
-        log("info", "Headers de respuesta:");
-        res.headers.forEach((v, k) => log("info", "  ", k, ":", v));
+        const res = await fetch(req.url, { method: "POST", headers: req.headers, body: req.body });
+        log("info", "Status:", res.status, res.statusText);
 
         if (!res.ok) {
-          let errBody;
-          try {
-            errBody = await res.json();
-          } catch (parseErr) {
-            errBody = {};
-            log("error", "No se pudo parsear el body del error como JSON:", parseErr.message);
-          }
-          log("error", "Respuesta no-OK — body:", errBody);
+          let errBody = {};
+          try { errBody = await res.json(); } catch (_) {}
+          log("error", "Error body:", errBody);
           throw new Error(errBody?.error?.message || `HTTP ${res.status}`);
         }
 
-        let data;
-        try {
-          data = await res.json();
-          log("info", "Body de respuesta parseado OK:", data);
-        } catch (parseErr) {
-          log("error", "Falló el parseo del body de éxito:", parseErr.message);
-          throw new Error("Respuesta JSON inválida del servidor");
-        }
+        const data = await res.json();
+        log("info", "Response:", data);
 
-        log("info", "content[0]:", data.content?.[0]);
-        const reply = data.content?.[0]?.text ?? "(sin respuesta)";
-        log("info", "reply extraído:", `"${reply.slice(0,80)}…"`);
-
-        if (data.usage) {
-          log("info", "Tokens — input:", data.usage.input_tokens, "output:", data.usage.output_tokens);
-          updateTokens(data.usage);
-        } else {
-          log("warn", "Sin campo 'usage' en la respuesta");
-        }
+        const { text: reply, usage } = parseResponse(data);
+        if (usage) updateTokens(usage);
 
         removeTyping();
-        addBubble("claude", reply);
+        addBubble("assistant", reply);
         history.push({ role: "assistant", content: reply });
-        log("info", "Mensaje assistant agregado. Historia total:", history.length, "turnos");
 
       } catch (err) {
-        log("error", "Error capturado en send():", err.name, "–", err.message);
-        log("error", "Stack:", err.stack);
+        log("error", err.name, "–", err.message);
         removeTyping();
         showError(err.message);
       } finally {
-        setLoading(false);
-        inputEl.focus();
-        log("info", "send() finalizado — busy=false");
+        setLoading(false); inputEl.focus();
       }
     }
 
