@@ -360,6 +360,110 @@
       color: #e87c7c;
       flex-shrink: 0;
     }
+
+    /* ── Settings panel ── */
+    #settings-btn {
+      margin-left: 8px;
+      background: none;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--muted);
+      cursor: pointer;
+      font-size: 14px;
+      width: 28px;
+      height: 28px;
+      display: grid;
+      place-items: center;
+      transition: border-color .15s, color .15s;
+    }
+    #settings-btn:hover { border-color: var(--accent2); color: var(--accent2); }
+    #settings-btn.active { border-color: var(--accent); color: var(--accent); }
+
+    #settings-panel {
+      display: none;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 14px 20px;
+      flex-shrink: 0;
+      animation: fadeIn .15s ease;
+    }
+    #settings-panel.open { display: block; }
+
+    .settings-inner {
+      max-width: 860px;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .settings-label {
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: .06em;
+    }
+
+    .settings-row {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+
+    #api-key-input {
+      flex: 1;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 8px 12px;
+      font-family: var(--mono);
+      font-size: 12px;
+      color: var(--text);
+      outline: none;
+      transition: border-color .15s;
+      letter-spacing: .04em;
+    }
+    #api-key-input:focus { border-color: var(--accent2); }
+    #api-key-input::placeholder { color: var(--muted); }
+
+    #save-key-btn {
+      background: var(--accent);
+      color: #1a1200;
+      border: none;
+      border-radius: var(--radius);
+      padding: 8px 14px;
+      font-family: var(--mono);
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      transition: opacity .15s;
+      white-space: nowrap;
+    }
+    #save-key-btn:hover { opacity: .85; }
+
+    #clear-key-btn {
+      background: none;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 8px 10px;
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--muted);
+      cursor: pointer;
+      transition: border-color .15s, color .15s;
+    }
+    #clear-key-btn:hover { border-color: #e87c7c; color: #e87c7c; }
+
+    .key-status {
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--muted);
+    }
+    .key-status.ok { color: #4caf6e; }
+    .key-status.missing { color: #e8a87c; }
   </style>
 </head>
 
@@ -385,7 +489,21 @@
       <div class="dot" id="dot"></div>
       <span id="status-text">listo</span>
     </div>
+    <button id="settings-btn" title="Configurar API Key">⚙</button>
   </header>
+
+  <!-- Settings panel (below header) -->
+  <div id="settings-panel">
+    <div class="settings-inner">
+      <span class="settings-label">API Key de Anthropic</span>
+      <div class="settings-row">
+        <input id="api-key-input" type="password" placeholder="sk-ant-api03-…" autocomplete="off" spellcheck="false" />
+        <button id="save-key-btn">Guardar</button>
+        <button id="clear-key-btn" title="Borrar key">✕</button>
+      </div>
+      <span class="key-status" id="key-status">Sin key configurada</span>
+    </div>
+  </div>
 
   <div id="messages">
     <div id="empty">
@@ -427,6 +545,59 @@
     const dotEl = document.getElementById("dot");
     const statusEl = document.getElementById("status-text");
     const errorBar = document.getElementById("error-bar");
+
+    // ── Settings / API Key ──
+    const settingsBtn   = document.getElementById("settings-btn");
+    const settingsPanel = document.getElementById("settings-panel");
+    const apiKeyInput   = document.getElementById("api-key-input");
+    const saveKeyBtn    = document.getElementById("save-key-btn");
+    const clearKeyBtn   = document.getElementById("clear-key-btn");
+    const keyStatus     = document.getElementById("key-status");
+
+    const LS_KEY = "poc_anthropic_key";
+
+    function loadKey() {
+      return localStorage.getItem(LS_KEY) || "";
+    }
+
+    function saveKey(k) {
+      if (k) localStorage.setItem(LS_KEY, k);
+      else    localStorage.removeItem(LS_KEY);
+    }
+
+    function refreshKeyStatus() {
+      const k = loadKey();
+      if (k) {
+        keyStatus.textContent = "✓ Key configurada (" + k.slice(0, 14) + "…)";
+        keyStatus.className = "key-status ok";
+        settingsBtn.classList.add("active");
+      } else {
+        keyStatus.textContent = "Sin key configurada";
+        keyStatus.className = "key-status missing";
+        settingsBtn.classList.remove("active");
+      }
+    }
+
+    // Init
+    apiKeyInput.value = loadKey();
+    refreshKeyStatus();
+
+    settingsBtn.addEventListener("click", () => {
+      settingsPanel.classList.toggle("open");
+    });
+
+    saveKeyBtn.addEventListener("click", () => {
+      const val = apiKeyInput.value.trim();
+      saveKey(val);
+      refreshKeyStatus();
+      settingsPanel.classList.remove("open");
+    });
+
+    clearKeyBtn.addEventListener("click", () => {
+      apiKeyInput.value = "";
+      saveKey("");
+      refreshKeyStatus();
+    });
 
     const history = [];   // {role, content}[]
     let busy = false;
@@ -554,6 +725,7 @@
           headers: {
             "Content-Type": "application/json",
             "anthropic-version": "2023-06-01",
+            ...(loadKey() ? { "x-user-api-key": loadKey() } : {}),
           },
           body: JSON.stringify({
             model: MODEL,

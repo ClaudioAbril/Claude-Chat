@@ -4,7 +4,8 @@
 //  workers.cloudflare.com → Create Worker → Edit code
 // ════════════════════════════════════════════════
 
-const ANTHROPIC_API_KEY = "sk-ant-api03-n4azMdgvnRC65UD6Z6DxHrmU2bl4Gl0BFqqKL63p3wu-J9vAiBitO3UypTaxqs1prh0Y6EFxuxYZGhIfVBukBA-CKv1OQAA";
+// Podés dejar esta key vacía ("") si querés que SOLO funcione con key del usuario
+const ANTHROPIC_API_KEY = "";
 const UPSTREAM          = "https://api.anthropic.com";
 
 // Orígenes permitidos (agregá los tuyos si es necesario)
@@ -19,7 +20,7 @@ function corsHeaders(origin) {
   return {
     "Access-Control-Allow-Origin":  allowed,
     "Access-Control-Allow-Methods": "POST, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type, anthropic-version",
+    "Access-Control-Allow-Headers": "Content-Type, anthropic-version, x-user-api-key",
     "Access-Control-Max-Age":       "86400",
   };
 }
@@ -42,11 +43,21 @@ export default {
     const url      = UPSTREAM + new URL(request.url).pathname;
     const body     = await request.text();
 
+    // Usá la key del usuario si la mandó, sino la hardcodeada del worker
+    const apiKey = request.headers.get("x-user-api-key") || ANTHROPIC_API_KEY;
+
+    if (!apiKey) {
+      return new Response(
+        JSON.stringify({ error: { message: "No API key provided. Configure your key in the app." } }),
+        { status: 401, headers: { "Content-Type": "application/json", ...corsHeaders(origin) } }
+      );
+    }
+
     const upstream = await fetch(url, {
       method:  "POST",
       headers: {
         "Content-Type":      "application/json",
-        "x-api-key":         ANTHROPIC_API_KEY,
+        "x-api-key":         apiKey,
         "anthropic-version": request.headers.get("anthropic-version") ?? "2023-06-01",
       },
       body,
