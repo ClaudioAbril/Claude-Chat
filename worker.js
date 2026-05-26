@@ -1,77 +1,172 @@
-// ════════════════════════════════════════════════
-//  Cloudflare Worker — Proxy para api.anthropic.com
-//  Pegá este código en: v2
-//  workers.cloudflare.com → Create Worker → Edit code
-// ════════════════════════════════════════════════
+/**
+ * ╔══════════════════════════════════════════════════════════╗
+ * ║  AI Proxy Worker  –  Multi-provider                     ║
+ * ║                                                          ║
+ * ║  Rutas:                                                  ║
+ * ║    POST /v1/messages          → Anthropic               ║
+ * ║    POST /v1/chat/completions  → GitHub Models / OpenAI  ║
+ * ║    OPTIONS *                  → CORS preflight          ║
+ * ║                                                          ║
+ * ║  Headers que acepta del cliente:                         ║
+ * ║    x-user-api-key   → API key Anthropic (opcional)      ║
+ * ║    Authorization    → Bearer <token> para OAI/GitHub    ║
+ * ║    x-provider       → "github" | "openai" (default)     ║
+ * ║                                                          ║
+ * ║  Variables de entorno del Worker (wrangler secret put):  ║
+ * ║    ANTHROPIC_API_KEY                                     ║
+ * ║    GITHUB_TOKEN                                          ║
+ * ║    OPENAI_API_KEY                                        ║
+ * ╚══════════════════════════════════════════════════════════╝
+ */
 
-// Podés dejar esta key vacía ("") si querés que SOLO funcione con key del usuario
-const ANTHROPIC_API_KEY = "";
-const UPSTREAM          = "https://api.anthropic.com";
+const UPSTREAMS = {
+  anthropic: "https://api.anthropic.com/v1/messages",
+  github:    "https://models.inference.ai.azure.com/chat/completions",
+  openai:    "https://api.openai.com/v1/chat/completions",
+};
 
-// Orígenes permitidos (agregá los tuyos si es necesario)
-const ALLOWED_ORIGINS = [
-  "https://claudioabril.github.io",
-  "http://localhost:8080",
-  "http://127.0.0.1:8080",
-];
+// CORS headers presentes en TODAS las respuestas (incluyendo errores).
+// Sin esto el browser no puede leer el body de una 4xx y muestra "Failed to fetch".
+const CORS = {
+  "Access-Control-Allow-Origin":  "*",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+  "Access-Control-Allow-Headers": [
+    "Content-Type",
+    "Authorization",
+    "anthropic-version",
+    "x-user-api-key",
+    "x-provider",
+  ].join(", "),
+};
 
-function corsHeaders(origin) {
-  const allowed = ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
-  return {
-    "Access-Control-Allow-Origin":  allowed,
-    "Access-Control-Allow-Methods": "POST, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type, anthropic-version, x-user-api-key",
-    "Access-Control-Max-Age":       "86400",
-  };
-}
+// ── Entry point ────────────────────────────────────────────────────────────
 
 export default {
-  async fetch(request) {
-    const origin = request.headers.get("Origin") ?? "";
-
-    // ── Preflight ──
+  async fetch(request, env) {
+    // 1. Preflight CORS
     if (request.method === "OPTIONS") {
-      return new Response(null, { status: 204, headers: corsHeaders(origin) });
+      return new Response(null, { status: 204, headers: CORS });
     }
 
-    // ── Solo POST ──
     if (request.method !== "POST") {
-      return new Response("Method not allowed", { status: 405 });
+      return errResponse("Method Not Allowed", 405);
     }
 
-    // ── Construir request hacia Anthropic ──
-    const url      = UPSTREAM + new URL(request.url).pathname;
-    const body     = await request.text();
+    const path = new URL(request.url).pathname;
 
-    // Usá la key del usuario si la mandó, sino la hardcodeada del worker
-    const apiKey = request.headers.get("x-user-api-key") || ANTHROPIC_API_KEY;
-
-    if (!apiKey) {
-      return new Response(
-        JSON.stringify({ error: { message: "No API key provided. Configure your key in the app." } }),
-        { status: 401, headers: { "Content-Type": "application/json", ...corsHeaders(origin) } }
-      );
+    if (path === "/v1/messages") {
+      return handleAnthropic(request, env);
     }
 
-    const upstream = await fetch(url, {
-      method:  "POST",
+    if (path === "/v1/chat/completions") {
+      return handleOpenAICompat(request, env);
+    }
+
+    return errResponse(`Unknown path: ${path}`, 404);
+  },
+};
+
+// ── Handler: Anthropic ─────────────────────────────────────────────────────
+
+async function handleAnthropic(request, env) {
+  // Prioridad: key del cliente → variable de entorno del Worker
+  const apiKey =
+    request.headers.get("x-user-api-key") ||
+    (env.ANTHROPIC_API_KEY ?? "");
+
+  if (!apiKey) {
+    return errResponse(
+      "No Anthropic API key. Configurá una en el panel ⚙ o en las variables del Worker.",
+      401
+    );
+  }
+
+  const body = await request.text();
+
+  let upstream;
+  try {
+    upstream = await fetch(UPSTREAMS.anthropic, {
+      method: "POST",
       headers: {
         "Content-Type":      "application/json",
+        "anthropic-version": request.headers.get("anthropic-version") || "2023-06-01",
         "x-api-key":         apiKey,
-        "anthropic-version": request.headers.get("anthropic-version") ?? "2023-06-01",
       },
       body,
     });
+  } catch (e) {
+    return errResponse(`Error conectando con Anthropic: ${e.message}`, 502);
+  }
 
-    // ── Devolver respuesta con headers CORS ──
-    const respHeaders = {
-      ...Object.fromEntries(upstream.headers),
-      ...corsHeaders(origin),
-    };
+  return proxyResponse(upstream);
+}
 
-    return new Response(upstream.body, {
-      status:  upstream.status,
-      headers: respHeaders,
+// ── Handler: OpenAI-compatible (GitHub Models, OpenAI) ────────────────────
+
+async function handleOpenAICompat(request, env) {
+  const provider = (request.headers.get("x-provider") || "openai").toLowerCase();
+
+  if (!UPSTREAMS[provider]) {
+    return errResponse(`Provider desconocido: "${provider}". Usá "github" u "openai".`, 400);
+  }
+
+  // Extraer token del header Authorization: "Bearer <token>"
+  const authHeader = request.headers.get("authorization") ?? "";
+  const clientKey  = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : authHeader;
+
+  // Prioridad: key del cliente → variable de entorno del Worker
+  const apiKey =
+    clientKey ||
+    (provider === "github" ? env.GITHUB_TOKEN : env.OPENAI_API_KEY) ||
+    "";
+
+  if (!apiKey) {
+    return errResponse(
+      `No API key para "${provider}". Configurá una en el panel ⚙ o en las variables del Worker.`,
+      401
+    );
+  }
+
+  const body = await request.text();
+
+  let upstream;
+  try {
+    upstream = await fetch(UPSTREAMS[provider], {
+      method: "POST",
+      headers: {
+        "Content-Type":  "application/json",
+        "Authorization": `Bearer ${apiKey}`,
+      },
+      body,
     });
-  },
-};
+  } catch (e) {
+    return errResponse(`Error conectando con ${provider}: ${e.message}`, 502);
+  }
+
+  return proxyResponse(upstream);
+}
+
+// ── Helpers ────────────────────────────────────────────────────────────────
+
+/** Devuelve la respuesta upstream con los headers CORS agregados. */
+async function proxyResponse(upstream) {
+  const body = await upstream.text();
+  return new Response(body, {
+    status:  upstream.status,
+    headers: {
+      ...CORS,
+      "Content-Type": upstream.headers.get("Content-Type") || "application/json",
+    },
+  });
+}
+
+/** Error estructurado en formato compatible con ambas APIs. */
+function errResponse(message, status) {
+  return new Response(
+    JSON.stringify({ error: { message, type: "proxy_error" } }),
+    {
+      status,
+      headers: { ...CORS, "Content-Type": "application/json" },
+    }
+  );
+}

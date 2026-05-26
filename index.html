@@ -390,8 +390,16 @@
       place-items: center;
       transition: border-color .15s, color .15s;
     }
-    #settings-btn:hover { border-color: var(--accent2); color: var(--accent2); }
-    #settings-btn.active { border-color: var(--accent); color: var(--accent); }
+
+    #settings-btn:hover {
+      border-color: var(--accent2);
+      color: var(--accent2);
+    }
+
+    #settings-btn.active {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
 
     #settings-panel {
       display: none;
@@ -401,7 +409,10 @@
       flex-shrink: 0;
       animation: fadeIn .15s ease;
     }
-    #settings-panel.open { display: block; }
+
+    #settings-panel.open {
+      display: block;
+    }
 
     .settings-inner {
       max-width: 860px;
@@ -438,8 +449,14 @@
       transition: border-color .15s;
       letter-spacing: .04em;
     }
-    #api-key-input:focus { border-color: var(--accent2); }
-    #api-key-input::placeholder { color: var(--muted); }
+
+    #api-key-input:focus {
+      border-color: var(--accent2);
+    }
+
+    #api-key-input::placeholder {
+      color: var(--muted);
+    }
 
     #save-key-btn {
       background: var(--accent);
@@ -456,7 +473,10 @@
       transition: opacity .15s;
       white-space: nowrap;
     }
-    #save-key-btn:hover { opacity: .85; }
+
+    #save-key-btn:hover {
+      opacity: .85;
+    }
 
     #clear-key-btn {
       background: none;
@@ -469,15 +489,25 @@
       cursor: pointer;
       transition: border-color .15s, color .15s;
     }
-    #clear-key-btn:hover { border-color: #e87c7c; color: #e87c7c; }
+
+    #clear-key-btn:hover {
+      border-color: #e87c7c;
+      color: #e87c7c;
+    }
 
     .key-status {
       font-family: var(--mono);
       font-size: 11px;
       color: var(--muted);
     }
-    .key-status.ok { color: #4caf6e; }
-    .key-status.missing { color: #e8a87c; }
+
+    .key-status.ok {
+      color: #4caf6e;
+    }
+
+    .key-status.missing {
+      color: #e8a87c;
+    }
 
     /* ── Provider / Model selects ── */
     .settings-grid {
@@ -485,7 +515,12 @@
       grid-template-columns: 1fr 1fr;
       gap: 10px;
     }
-    @media (max-width: 560px) { .settings-grid { grid-template-columns: 1fr; } }
+
+    @media (max-width: 560px) {
+      .settings-grid {
+        grid-template-columns: 1fr;
+      }
+    }
 
     .settings-field {
       display: flex;
@@ -493,7 +528,8 @@
       gap: 5px;
     }
 
-    select.settings-select, input.settings-input-sm {
+    select.settings-select,
+    input.settings-input-sm {
       background: var(--bg);
       border: 1px solid var(--border);
       border-radius: var(--radius);
@@ -505,9 +541,15 @@
       transition: border-color .15s;
       width: 100%;
     }
-    select.settings-select { cursor: pointer; }
+
+    select.settings-select {
+      cursor: pointer;
+    }
+
     select.settings-select:focus,
-    input.settings-input-sm:focus { border-color: var(--accent2); }
+    input.settings-input-sm:focus {
+      border-color: var(--accent2);
+    }
 
     .provider-badge {
       display: inline-flex;
@@ -567,15 +609,18 @@
         </div>
         <div class="settings-field">
           <span class="settings-label">Modelo</span>
-          <input id="model-input" class="settings-input-sm" type="text" placeholder="nombre del modelo" autocomplete="off" spellcheck="false" />
+          <input id="model-input" class="settings-input-sm" type="text" placeholder="nombre del modelo"
+            autocomplete="off" spellcheck="false" />
         </div>
       </div>
 
       <!-- Fila 2: API Key -->
       <span class="settings-label">API Key / Token</span>
       <div class="settings-row">
-        <input id="api-key-input" type="text" placeholder="sk-ant-api03-… / ghp_… / sk-…" autocomplete="off" spellcheck="false" style="-webkit-text-security:disc" />
-        <button id="toggle-key-btn" title="Mostrar/ocultar" style="background:none;border:1px solid var(--border);border-radius:6px;color:var(--muted);cursor:pointer;width:32px;height:34px;display:grid;place-items:center;font-size:13px;flex-shrink:0">👁</button>
+        <input id="api-key-input" type="text" placeholder="sk-ant-api03-… / ghp_… / sk-…" autocomplete="off"
+          spellcheck="false" style="-webkit-text-security:disc" />
+        <button id="toggle-key-btn" title="Mostrar/ocultar"
+          style="background:none;border:1px solid var(--border);border-radius:6px;color:var(--muted);cursor:pointer;width:32px;height:34px;display:grid;place-items:center;font-size:13px;flex-shrink:0">👁</button>
         <button id="save-key-btn">Guardar</button>
         <button id="clear-key-btn" title="Borrar key">✕</button>
       </div>
@@ -584,7 +629,8 @@
       <!-- Fila 3: Worker URL (solo Anthropic) -->
       <div id="worker-url-row" class="settings-field">
         <span class="settings-label">Worker URL (Anthropic)</span>
-        <input id="worker-url-input" class="settings-input-sm" type="text" placeholder="https://…workers.dev/v1/messages" autocomplete="off" spellcheck="false" />
+        <input id="worker-url-input" class="settings-input-sm" type="text"
+          placeholder="https://…workers.dev/v1/messages" autocomplete="off" spellcheck="false" />
       </div>
 
     </div>
@@ -618,60 +664,61 @@
     //  DEFAULTS  ← se pueden cambiar acá o desde el panel ⚙
     // ══════════════════════════════════════════
     const DEFAULT_WORKER_URL = "https://muddy-wildflower-c8f9.claudioabril1000.workers.dev/v1/messages";
-    const DEFAULT_PROVIDER   = "anthropic";   // "anthropic" | "github" | "openai"
-    const DEFAULT_MODEL      = "claude-sonnet-4-6";
+    const DEFAULT_PROVIDER = "anthropic";   // "anthropic" | "github" | "openai"
+    const DEFAULT_MODEL = "claude-sonnet-4-6";
     const SYSTEM = "Eres un asistente útil y conciso. Respondés en el mismo idioma del usuario.";
 
     // Modelos por defecto por proveedor
     const DEFAULT_MODELS = {
       anthropic: "claude-sonnet-4-6",
-      github:    "gpt-4o-mini",
-      openai:    "gpt-4o-mini",
+      github: "gpt-4o-mini",
+      openai: "gpt-4o-mini",
     };
 
     // Endpoints fijos por proveedor (excepto anthropic que usa el Worker)
-    const PROVIDER_ENDPOINTS = {
-      github: "https://models.inference.ai.azure.com/chat/completions",
-      openai: "https://api.openai.com/v1/chat/completions",
-    };
+    function getWorkerBase() {
+      // Toma la URL guardada (ej: ".../v1/messages") y quita el path
+      // para poder construir cualquier ruta sobre la misma base.
+      return getWorkerUrl().replace(/\/v1\/messages$/, "");
+    }
     // ══════════════════════════════════════════
 
-    const messagesEl   = document.getElementById("messages");
-    const emptyEl      = document.getElementById("empty");
-    const inputEl      = document.getElementById("input");
-    const sendBtn      = document.getElementById("send");
-    const dotEl        = document.getElementById("dot");
-    const statusEl     = document.getElementById("status-text");
-    const errorBar     = document.getElementById("error-bar");
-    const headerBadge  = document.getElementById("provider-badge");
+    const messagesEl = document.getElementById("messages");
+    const emptyEl = document.getElementById("empty");
+    const inputEl = document.getElementById("input");
+    const sendBtn = document.getElementById("send");
+    const dotEl = document.getElementById("dot");
+    const statusEl = document.getElementById("status-text");
+    const errorBar = document.getElementById("error-bar");
+    const headerBadge = document.getElementById("provider-badge");
 
     // ── Settings refs ──
-    const settingsBtn     = document.getElementById("settings-btn");
-    const settingsPanel   = document.getElementById("settings-panel");
-    const apiKeyInput     = document.getElementById("api-key-input");
-    const saveKeyBtn      = document.getElementById("save-key-btn");
-    const clearKeyBtn     = document.getElementById("clear-key-btn");
-    const toggleKeyBtn    = document.getElementById("toggle-key-btn");
-    const keyStatus       = document.getElementById("key-status");
-    const providerSelect  = document.getElementById("provider-select");
-    const modelInput      = document.getElementById("model-input");
-    const workerUrlInput  = document.getElementById("worker-url-input");
-    const workerUrlRow    = document.getElementById("worker-url-row");
+    const settingsBtn = document.getElementById("settings-btn");
+    const settingsPanel = document.getElementById("settings-panel");
+    const apiKeyInput = document.getElementById("api-key-input");
+    const saveKeyBtn = document.getElementById("save-key-btn");
+    const clearKeyBtn = document.getElementById("clear-key-btn");
+    const toggleKeyBtn = document.getElementById("toggle-key-btn");
+    const keyStatus = document.getElementById("key-status");
+    const providerSelect = document.getElementById("provider-select");
+    const modelInput = document.getElementById("model-input");
+    const workerUrlInput = document.getElementById("worker-url-input");
+    const workerUrlRow = document.getElementById("worker-url-row");
 
     // ── LocalStorage keys ──
-    const LS_KEY      = "poc_api_key";
+    const LS_KEY = "poc_api_key";
     const LS_PROVIDER = "poc_provider";
-    const LS_MODEL    = "poc_model";
-    const LS_WORKER   = "poc_worker_url";
+    const LS_MODEL = "poc_model";
+    const LS_WORKER = "poc_worker_url";
 
     // ── Persistence helpers ──
-    const load  = k       => localStorage.getItem(k) || "";
-    const save  = (k, v)  => v ? localStorage.setItem(k, v) : localStorage.removeItem(k);
+    const load = k => localStorage.getItem(k) || "";
+    const save = (k, v) => v ? localStorage.setItem(k, v) : localStorage.removeItem(k);
 
-    function getProvider()  { return load(LS_PROVIDER) || DEFAULT_PROVIDER; }
-    function getModel()     { return load(LS_MODEL)    || DEFAULT_MODELS[getProvider()] || DEFAULT_MODEL; }
-    function getWorkerUrl() { return load(LS_WORKER)   || DEFAULT_WORKER_URL; }
-    function getApiKey()    { return load(LS_KEY); }
+    function getProvider() { return load(LS_PROVIDER) || DEFAULT_PROVIDER; }
+    function getModel() { return load(LS_MODEL) || DEFAULT_MODELS[getProvider()] || DEFAULT_MODEL; }
+    function getWorkerUrl() { return load(LS_WORKER) || DEFAULT_WORKER_URL; }
+    function getApiKey() { return load(LS_KEY); }
 
     // ── Actualizar badge del header ──
     function updateBadge() {
@@ -693,10 +740,10 @@
 
     // ── Cargar estado guardado en el panel ──
     function loadSettingsPanel() {
-      providerSelect.value   = getProvider();
-      modelInput.value       = getModel();
-      workerUrlInput.value   = getWorkerUrl();
-      apiKeyInput.value      = getApiKey();
+      providerSelect.value = getProvider();
+      modelInput.value = getModel();
+      workerUrlInput.value = getWorkerUrl();
+      apiKeyInput.value = getApiKey();
       onProviderChange();
       refreshKeyStatus();
     }
@@ -705,11 +752,11 @@
       const k = getApiKey();
       if (k) {
         keyStatus.textContent = "✓ Key configurada (" + k.slice(0, 14) + "…)";
-        keyStatus.className   = "key-status ok";
+        keyStatus.className = "key-status ok";
         settingsBtn.classList.add("active");
       } else {
         keyStatus.textContent = "Sin key configurada";
-        keyStatus.className   = "key-status missing";
+        keyStatus.className = "key-status missing";
         settingsBtn.classList.remove("active");
       }
     }
@@ -723,10 +770,10 @@
     });
 
     saveKeyBtn.addEventListener("click", () => {
-      save(LS_KEY,      apiKeyInput.value.trim());
+      save(LS_KEY, apiKeyInput.value.trim());
       save(LS_PROVIDER, providerSelect.value);
-      save(LS_MODEL,    modelInput.value.trim());
-      save(LS_WORKER,   workerUrlInput.value.trim());
+      save(LS_MODEL, modelInput.value.trim());
+      save(LS_WORKER, workerUrlInput.value.trim());
       refreshKeyStatus();
       updateBadge();
       settingsPanel.classList.remove("open");
@@ -749,16 +796,16 @@
     // ══════════════════════════════════════════
     function buildRequest(history) {
       const provider = getProvider();
-      const model    = getModel();
-      const apiKey   = getApiKey();
+      const model = getModel();
+      const apiKey = getApiKey();
 
       if (provider === "anthropic") {
         // ── Formato Anthropic Messages API ──
         return {
           url: getWorkerUrl(),
           headers: {
-            "Content-Type":       "application/json",
-            "anthropic-version":  "2023-06-01",
+            "Content-Type": "application/json",
+            "anthropic-version": "2023-06-01",
             ...(apiKey ? { "x-user-api-key": apiKey } : {}),
           },
           body: JSON.stringify({
@@ -769,17 +816,16 @@
           }),
         };
       } else {
-        // ── Formato OpenAI Chat Completions (GitHub Models, OpenAI, etc.) ──
-        // Convertir historial al formato OpenAI (role: user/assistant)
         const oaiMessages = [
           { role: "system", content: SYSTEM },
           ...history.map(m => ({ role: m.role === "assistant" ? "assistant" : "user", content: m.content })),
         ];
         return {
-          url: PROVIDER_ENDPOINTS[provider] || PROVIDER_ENDPOINTS.openai,
+          url: getWorkerBase() + "/v1/chat/completions",   // ← pasa por el Worker
           headers: {
-            "Content-Type":  "application/json",
+            "Content-Type": "application/json",
             "Authorization": `Bearer ${apiKey}`,
+            "x-provider": provider,                     // ← "github" | "openai"
           },
           body: JSON.stringify({
             model,
@@ -788,153 +834,152 @@
           }),
         };
       }
-    }
 
-    // ── Extraer texto y usage de la respuesta según proveedor ──
-    function parseResponse(data) {
-      const provider = getProvider();
-      if (provider === "anthropic") {
-        return {
-          text:  data.content?.[0]?.text ?? "(sin respuesta)",
-          usage: data.usage ?? null,
-        };
-      } else {
-        // OpenAI-compatible
-        const text  = data.choices?.[0]?.message?.content ?? "(sin respuesta)";
-        const usage = data.usage
-          ? { input_tokens: data.usage.prompt_tokens, output_tokens: data.usage.completion_tokens }
-          : null;
-        return { text, usage };
-      }
-    }
-
-    // ══════════════════════════════════════════
-    const history = [];
-    let busy = false;
-    let totalIn = 0, totalOut = 0;
-
-    const statTokens = document.getElementById("stat-tokens");
-    const statIn     = document.getElementById("stat-in");
-    const statOut    = document.getElementById("stat-out");
-
-    function fmt(n) { return n >= 1000 ? (n / 1000).toFixed(1) + "k" : String(n); }
-
-    function updateTokens(usage) {
-      if (!usage) return;
-      totalIn  += usage.input_tokens  ?? 0;
-      totalOut += usage.output_tokens ?? 0;
-      statIn.textContent     = fmt(totalIn);
-      statOut.textContent    = fmt(totalOut);
-      statTokens.textContent = fmt(totalIn + totalOut);
-      [statTokens, statIn, statOut].forEach(el => {
-        el.classList.add("flash");
-        setTimeout(() => el.classList.remove("flash"), 600);
-      });
-    }
-
-    inputEl.addEventListener("input", () => {
-      inputEl.style.height = "auto";
-      inputEl.style.height = Math.min(inputEl.scrollHeight, 160) + "px";
-    });
-
-    inputEl.addEventListener("keydown", e => {
-      if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }
-    });
-    sendBtn.addEventListener("click", send);
-
-    function addBubble(role, text) {
-      emptyEl.style.display = "none";
-      const msg = document.createElement("div");
-      msg.className = `msg ${role === "assistant" ? "claude" : role}`;
-      const av  = document.createElement("div");
-      av.className  = "avatar";
-      av.textContent = role === "user" ? "TÚ" : "AI";
-      const bub = document.createElement("div");
-      bub.className  = "bubble";
-      bub.textContent = text;
-      msg.appendChild(av);
-      msg.appendChild(bub);
-      messagesEl.appendChild(msg);
-      messagesEl.scrollTop = messagesEl.scrollHeight;
-      return bub;
-    }
-
-    function addTyping() {
-      const msg = document.createElement("div");
-      msg.className = "msg claude"; msg.id = "typing-msg";
-      const av = document.createElement("div"); av.className = "avatar"; av.textContent = "AI";
-      const t  = document.createElement("div"); t.className  = "typing";
-      t.innerHTML = "<span></span><span></span><span></span>";
-      msg.appendChild(av); msg.appendChild(t);
-      messagesEl.appendChild(msg);
-      messagesEl.scrollTop = messagesEl.scrollHeight;
-    }
-    function removeTyping() { document.getElementById("typing-msg")?.remove(); }
-
-    function setLoading(on) {
-      busy = on;
-      sendBtn.disabled = on; inputEl.disabled = on;
-      dotEl.className = on ? "dot error" : "dot";
-      statusEl.textContent = on ? "procesando…" : "listo";
-      if (on) errorBar.style.display = "none";
-    }
-    function showError(msg) {
-      errorBar.textContent = "⚠ " + msg; errorBar.style.display = "block";
-      dotEl.className = "dot error"; statusEl.textContent = "error";
-    }
-
-    function log(level, ...args) {
-      const ts = new Date().toISOString().slice(11, 23);
-      const prefix = `[PoC ${ts}]`;
-      if (level === "error") console.error(prefix, ...args);
-      else if (level === "warn")  console.warn(prefix, ...args);
-      else                        console.log(prefix, ...args);
-    }
-
-    async function send() {
-      const text = inputEl.value.trim();
-      if (!text || busy) return;
-
-      inputEl.value = ""; inputEl.style.height = "auto";
-      addBubble("user", text);
-      history.push({ role: "user", content: text });
-      setLoading(true); addTyping();
-
-      const req = buildRequest(history);
-      log("info", "Provider:", getProvider(), "| Model:", getModel());
-      log("info", "→", req.url);
-
-      try {
-        const res = await fetch(req.url, { method: "POST", headers: req.headers, body: req.body });
-        log("info", "Status:", res.status, res.statusText);
-
-        if (!res.ok) {
-          let errBody = {};
-          try { errBody = await res.json(); } catch (_) {}
-          log("error", "Error body:", errBody);
-          throw new Error(errBody?.error?.message || `HTTP ${res.status}`);
+      // ── Extraer texto y usage de la respuesta según proveedor ──
+      function parseResponse(data) {
+        const provider = getProvider();
+        if (provider === "anthropic") {
+          return {
+            text: data.content?.[0]?.text ?? "(sin respuesta)",
+            usage: data.usage ?? null,
+          };
+        } else {
+          // OpenAI-compatible
+          const text = data.choices?.[0]?.message?.content ?? "(sin respuesta)";
+          const usage = data.usage
+            ? { input_tokens: data.usage.prompt_tokens, output_tokens: data.usage.completion_tokens }
+            : null;
+          return { text, usage };
         }
-
-        const data = await res.json();
-        log("info", "Response:", data);
-
-        const { text: reply, usage } = parseResponse(data);
-        if (usage) updateTokens(usage);
-
-        removeTyping();
-        addBubble("assistant", reply);
-        history.push({ role: "assistant", content: reply });
-
-      } catch (err) {
-        log("error", err.name, "–", err.message);
-        removeTyping();
-        showError(err.message);
-      } finally {
-        setLoading(false); inputEl.focus();
       }
-    }
 
-    inputEl.focus();
+      // ══════════════════════════════════════════
+      const history = [];
+      let busy = false;
+      let totalIn = 0, totalOut = 0;
+
+      const statTokens = document.getElementById("stat-tokens");
+      const statIn = document.getElementById("stat-in");
+      const statOut = document.getElementById("stat-out");
+
+      function fmt(n) { return n >= 1000 ? (n / 1000).toFixed(1) + "k" : String(n); }
+
+      function updateTokens(usage) {
+        if (!usage) return;
+        totalIn += usage.input_tokens ?? 0;
+        totalOut += usage.output_tokens ?? 0;
+        statIn.textContent = fmt(totalIn);
+        statOut.textContent = fmt(totalOut);
+        statTokens.textContent = fmt(totalIn + totalOut);
+        [statTokens, statIn, statOut].forEach(el => {
+          el.classList.add("flash");
+          setTimeout(() => el.classList.remove("flash"), 600);
+        });
+      }
+
+      inputEl.addEventListener("input", () => {
+        inputEl.style.height = "auto";
+        inputEl.style.height = Math.min(inputEl.scrollHeight, 160) + "px";
+      });
+
+      inputEl.addEventListener("keydown", e => {
+        if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }
+      });
+      sendBtn.addEventListener("click", send);
+
+      function addBubble(role, text) {
+        emptyEl.style.display = "none";
+        const msg = document.createElement("div");
+        msg.className = `msg ${role === "assistant" ? "claude" : role}`;
+        const av = document.createElement("div");
+        av.className = "avatar";
+        av.textContent = role === "user" ? "TÚ" : "AI";
+        const bub = document.createElement("div");
+        bub.className = "bubble";
+        bub.textContent = text;
+        msg.appendChild(av);
+        msg.appendChild(bub);
+        messagesEl.appendChild(msg);
+        messagesEl.scrollTop = messagesEl.scrollHeight;
+        return bub;
+      }
+
+      function addTyping() {
+        const msg = document.createElement("div");
+        msg.className = "msg claude"; msg.id = "typing-msg";
+        const av = document.createElement("div"); av.className = "avatar"; av.textContent = "AI";
+        const t = document.createElement("div"); t.className = "typing";
+        t.innerHTML = "<span></span><span></span><span></span>";
+        msg.appendChild(av); msg.appendChild(t);
+        messagesEl.appendChild(msg);
+        messagesEl.scrollTop = messagesEl.scrollHeight;
+      }
+      function removeTyping() { document.getElementById("typing-msg")?.remove(); }
+
+      function setLoading(on) {
+        busy = on;
+        sendBtn.disabled = on; inputEl.disabled = on;
+        dotEl.className = on ? "dot error" : "dot";
+        statusEl.textContent = on ? "procesando…" : "listo";
+        if (on) errorBar.style.display = "none";
+      }
+      function showError(msg) {
+        errorBar.textContent = "⚠ " + msg; errorBar.style.display = "block";
+        dotEl.className = "dot error"; statusEl.textContent = "error";
+      }
+
+      function log(level, ...args) {
+        const ts = new Date().toISOString().slice(11, 23);
+        const prefix = `[PoC ${ts}]`;
+        if (level === "error") console.error(prefix, ...args);
+        else if (level === "warn") console.warn(prefix, ...args);
+        else console.log(prefix, ...args);
+      }
+
+      async function send() {
+        const text = inputEl.value.trim();
+        if (!text || busy) return;
+
+        inputEl.value = ""; inputEl.style.height = "auto";
+        addBubble("user", text);
+        history.push({ role: "user", content: text });
+        setLoading(true); addTyping();
+
+        const req = buildRequest(history);
+        log("info", "Provider:", getProvider(), "| Model:", getModel());
+        log("info", "→", req.url);
+
+        try {
+          const res = await fetch(req.url, { method: "POST", headers: req.headers, body: req.body });
+          log("info", "Status:", res.status, res.statusText);
+
+          if (!res.ok) {
+            let errBody = {};
+            try { errBody = await res.json(); } catch (_) { }
+            log("error", "Error body:", errBody);
+            throw new Error(errBody?.error?.message || `HTTP ${res.status}`);
+          }
+
+          const data = await res.json();
+          log("info", "Response:", data);
+
+          const { text: reply, usage } = parseResponse(data);
+          if (usage) updateTokens(usage);
+
+          removeTyping();
+          addBubble("assistant", reply);
+          history.push({ role: "assistant", content: reply });
+
+        } catch (err) {
+          log("error", err.name, "–", err.message);
+          removeTyping();
+          showError(err.message);
+        } finally {
+          setLoading(false); inputEl.focus();
+        }
+      }
+
+      inputEl.focus();
   </script>
 </body>
 
