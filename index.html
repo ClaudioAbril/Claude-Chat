@@ -4,7 +4,21 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Claude – PoC - v.1.05</title>
+  <title>Claude – PoC – </title>
+  <script>
+    // Título dinámico: "Claude – PoC – AAAAMMDD.HHmm"
+    (function () {
+      const now = new Date();
+      const pad = n => String(n).padStart(2, "0");
+      const stamp =
+        now.getFullYear() +
+        pad(now.getMonth() + 1) +
+        pad(now.getDate()) + "." +
+        pad(now.getHours()) +
+        pad(now.getMinutes());
+      document.querySelector("title").textContent = "Claude – PoC – " + stamp;
+    })();
+  </script>
   <link
     href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@300;400;500&display=swap"
     rel="stylesheet" />
@@ -713,19 +727,45 @@
       statusEl.textContent = "error";
     }
 
+    // ── Logger helper ──
+    function log(level, ...args) {
+      const ts = new Date().toISOString().slice(11, 23); // HH:mm:ss.mmm
+      const prefix = `[PoC ${ts}]`;
+      if (level === "error") console.error(prefix, ...args);
+      else if (level === "warn")  console.warn(prefix, ...args);
+      else                        console.log(prefix, ...args);
+    }
+
     // ── Main send function ──
     async function send() {
       const text = inputEl.value.trim();
-      if (!text || busy) return;
+      log("info", "send() llamado — texto:", text ? `"${text.slice(0,60)}…"` : "(vacío)");
+      if (!text || busy) {
+        log("warn", "send() abortado — texto vacío o busy=", busy);
+        return;
+      }
 
       inputEl.value = "";
       inputEl.style.height = "auto";
 
       addBubble("user", text);
       history.push({ role: "user", content: text });
+      log("info", "Historia actualizada, turnos totales:", history.length);
 
       setLoading(true);
       addTyping();
+
+      // ── Payload de la request ──
+      const payload = {
+        model: MODEL,
+        max_tokens: 1024,
+        system: SYSTEM,
+        messages: history,
+      };
+      const hasKey = !!loadKey();
+      log("info", "Enviando fetch →", WORKER_URL);
+      log("info", "Modelo:", MODEL, "| API key presente:", hasKey);
+      log("info", "Payload completo:", JSON.parse(JSON.stringify(payload)));
 
       try {
         const res = await fetch(WORKER_URL, {
@@ -733,36 +773,61 @@
           headers: {
             "Content-Type": "application/json",
             "anthropic-version": "2023-06-01",
-            ...(loadKey() ? { "x-user-api-key": loadKey() } : {}),
+            ...(hasKey ? { "x-user-api-key": loadKey() } : {}),
           },
-          body: JSON.stringify({
-            model: MODEL,
-            max_tokens: 1024,
-            system: SYSTEM,
-            messages: history,
-          }),
+          body: JSON.stringify(payload),
         });
 
+        log("info", "Respuesta recibida — status:", res.status, res.statusText);
+        log("info", "Headers de respuesta:");
+        res.headers.forEach((v, k) => log("info", "  ", k, ":", v));
+
         if (!res.ok) {
-          const err = await res.json().catch(() => ({}));
-          throw new Error(err?.error?.message || `HTTP ${res.status}`);
+          let errBody;
+          try {
+            errBody = await res.json();
+          } catch (parseErr) {
+            errBody = {};
+            log("error", "No se pudo parsear el body del error como JSON:", parseErr.message);
+          }
+          log("error", "Respuesta no-OK — body:", errBody);
+          throw new Error(errBody?.error?.message || `HTTP ${res.status}`);
         }
 
-        const data = await res.json();
-        const reply = data.content?.[0]?.text ?? "(sin respuesta)";
+        let data;
+        try {
+          data = await res.json();
+          log("info", "Body de respuesta parseado OK:", data);
+        } catch (parseErr) {
+          log("error", "Falló el parseo del body de éxito:", parseErr.message);
+          throw new Error("Respuesta JSON inválida del servidor");
+        }
 
-        if (data.usage) updateTokens(data.usage);
+        log("info", "content[0]:", data.content?.[0]);
+        const reply = data.content?.[0]?.text ?? "(sin respuesta)";
+        log("info", "reply extraído:", `"${reply.slice(0,80)}…"`);
+
+        if (data.usage) {
+          log("info", "Tokens — input:", data.usage.input_tokens, "output:", data.usage.output_tokens);
+          updateTokens(data.usage);
+        } else {
+          log("warn", "Sin campo 'usage' en la respuesta");
+        }
 
         removeTyping();
         addBubble("claude", reply);
         history.push({ role: "assistant", content: reply });
+        log("info", "Mensaje assistant agregado. Historia total:", history.length, "turnos");
 
       } catch (err) {
+        log("error", "Error capturado en send():", err.name, "–", err.message);
+        log("error", "Stack:", err.stack);
         removeTyping();
         showError(err.message);
       } finally {
         setLoading(false);
         inputEl.focus();
+        log("info", "send() finalizado — busy=false");
       }
     }
 
