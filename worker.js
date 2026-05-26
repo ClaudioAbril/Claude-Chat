@@ -1,6 +1,6 @@
 // ════════════════════════════════════════════════
 //  Cloudflare Worker — Proxy para api.anthropic.com
-//  Pegá este código en:
+//  Pegá este código en: v2
 //  workers.cloudflare.com → Create Worker → Edit code
 // ════════════════════════════════════════════════
 
