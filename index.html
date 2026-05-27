@@ -5,7 +5,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <link rel="icon" href="data:,">
-  <title>AI Chat – PoC – 20260526.2202</title>
+  <title>AI Chat – PoC – 20260527.1</title>
   <link
     href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@300;400;500&display=swap"
     rel="stylesheet" />
@@ -570,7 +570,7 @@
 
       <!-- Fila 3: Worker URL (solo Anthropic) -->
       <div id="worker-url-row" class="settings-field">
-        <span class="settings-label">Worker URL (Anthropic)</span>
+        <span class="settings-label" id="worker-url-label">Worker URL</span>
         <input id="worker-url-input" class="settings-input-sm" type="text" placeholder="https://…workers.dev/v1/messages" autocomplete="off" spellcheck="false" />
       </div>
 
@@ -604,9 +604,10 @@
     // ══════════════════════════════════════════
     //  DEFAULTS  ← se pueden cambiar acá o desde el panel ⚙
     // ══════════════════════════════════════════
-    const DEFAULT_WORKER_URL = "https://muddy-wildflower-c8f9.claudioabril1000.workers.dev/v1/messages";
-    const DEFAULT_PROVIDER   = "anthropic";   // "anthropic" | "github" | "openai"
-    const DEFAULT_MODEL      = "claude-sonnet-4-6";
+    const DEFAULT_WORKER_URL    = "https://muddy-wildflower-c8f9.claudioabril1000.workers.dev/v1/messages";
+    const DEFAULT_WORKER_GH_URL = "https://black-term-27aa.claudioabril1000.workers.dev";
+    const DEFAULT_PROVIDER      = "anthropic";   // "anthropic" | "github" | "openai"
+    const DEFAULT_MODEL         = "claude-sonnet-4-6";
     const SYSTEM = "Eres un asistente útil y conciso. Respondés en el mismo idioma del usuario.";
 
     // Modelos por defecto por proveedor
@@ -616,9 +617,8 @@
       openai:    "gpt-4o-mini",
     };
 
-    // Endpoints fijos por proveedor (excepto anthropic que usa el Worker)
+    // Endpoints fijos por proveedor (github y anthropic usan Workers configurables)
     const PROVIDER_ENDPOINTS = {
-      github: "https://models.inference.ai.azure.com/chat/completions",
       openai: "https://api.openai.com/v1/chat/completions",
     };
     // ══════════════════════════════════════════
@@ -649,7 +649,8 @@
     const LS_KEY      = "poc_api_key";
     const LS_PROVIDER = "poc_provider";
     const LS_MODEL    = "poc_model";
-    const LS_WORKER   = "poc_worker_url";
+    const LS_WORKER    = "poc_worker_url";
+    const LS_WORKER_GH = "poc_worker_gh_url";
 
     // ── Persistence helpers ──
     const load  = k       => localStorage.getItem(k) || "";
@@ -657,8 +658,9 @@
 
     function getProvider()  { return load(LS_PROVIDER) || DEFAULT_PROVIDER; }
     function getModel()     { return load(LS_MODEL)    || DEFAULT_MODELS[getProvider()] || DEFAULT_MODEL; }
-    function getWorkerUrl() { return load(LS_WORKER)   || DEFAULT_WORKER_URL; }
-    function getApiKey()    { return load(LS_KEY); }
+    function getWorkerUrl()   { return load(LS_WORKER)    || DEFAULT_WORKER_URL; }
+    function getGhWorkerUrl() { return load(LS_WORKER_GH) || DEFAULT_WORKER_GH_URL; }
+    function getApiKey()      { return load(LS_KEY); }
 
     // ── Actualizar badge del header ──
     function updateBadge() {
@@ -670,7 +672,13 @@
     // ── Mostrar/ocultar Worker URL según proveedor ──
     function onProviderChange() {
       const p = providerSelect.value;
-      workerUrlRow.style.display = p === "anthropic" ? "" : "none";
+      workerUrlRow.style.display = (p === "anthropic" || p === "github") ? "" : "none";
+      workerUrlInput.placeholder = p === "github" ? "https://…workers.dev" : "https://…workers.dev/v1/messages";
+      if (p === "github" && (workerUrlInput.value === getWorkerUrl() || !workerUrlInput.value)) {
+        workerUrlInput.value = getGhWorkerUrl();
+      } else if (p === "anthropic" && !workerUrlInput.value) {
+        workerUrlInput.value = getWorkerUrl();
+      }
       // sugerir modelo por defecto si el campo está vacío o era de otro proveedor
       if (!modelInput.value || Object.values(DEFAULT_MODELS).includes(modelInput.value)) {
         modelInput.value = DEFAULT_MODELS[p] || "";
@@ -682,7 +690,8 @@
     function loadSettingsPanel() {
       providerSelect.value   = getProvider();
       modelInput.value       = getModel();
-      workerUrlInput.value   = getWorkerUrl();
+      const p0 = getProvider();
+      workerUrlInput.value = p0 === "github" ? getGhWorkerUrl() : getWorkerUrl();
       apiKeyInput.value      = getApiKey();
       onProviderChange();
       refreshKeyStatus();
@@ -713,7 +722,12 @@
       save(LS_KEY,      apiKeyInput.value.trim());
       save(LS_PROVIDER, providerSelect.value);
       save(LS_MODEL,    modelInput.value.trim());
-      save(LS_WORKER,   workerUrlInput.value.trim());
+      const sp = providerSelect.value;
+      if (sp === "github") {
+        save(LS_WORKER_GH, workerUrlInput.value.trim());
+      } else {
+        save(LS_WORKER,    workerUrlInput.value.trim());
+      }
       refreshKeyStatus();
       updateBadge();
       settingsPanel.classList.remove("open");
@@ -763,7 +777,7 @@
           ...chatHistory.map(m => ({ role: m.role === "assistant" ? "assistant" : "user", content: m.content })),
         ];
         return {
-          url: PROVIDER_ENDPOINTS[provider] || PROVIDER_ENDPOINTS.openai,
+          url: provider === "github" ? getGhWorkerUrl() : (PROVIDER_ENDPOINTS[provider] || PROVIDER_ENDPOINTS.openai),
           headers: {
             "Content-Type":  "application/json",
             "Authorization": `Bearer ${apiKey}`,
