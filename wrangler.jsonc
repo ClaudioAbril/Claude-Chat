@@ -1,7 +1,11 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "claudechat",
+<<<<<<< HEAD
   "compatibility_date": "2026-05-27",
+=======
+  "compatibility_date": "2026-05-26",
+>>>>>>> cloudflare/workers-autoconfig
   "observability": {
     "enabled": true
   },
