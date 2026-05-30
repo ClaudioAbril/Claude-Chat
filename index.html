@@ -9,6 +9,7 @@
   <link
     href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@300;400;500&display=swap"
     rel="stylesheet" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.0/marked.min.js"></script>
   <style>
     /* ── Variables ── */
     :root {
@@ -215,8 +216,103 @@
       font-size: 14.5px;
       line-height: 1.65;
       color: var(--text);
-      white-space: pre-wrap;
       word-break: break-word;
+      min-width: 0;
+    }
+
+    /* ── Usuario: texto plano ── */
+    .bubble.plain { white-space: pre-wrap; }
+
+    /* ── Markdown rendered styles ── */
+    .bubble.md p { margin: 0 0 .75em; }
+    .bubble.md p:last-child { margin-bottom: 0; }
+
+    .bubble.md h1, .bubble.md h2, .bubble.md h3,
+    .bubble.md h4, .bubble.md h5, .bubble.md h6 {
+      font-family: var(--mono);
+      color: var(--accent);
+      margin: 1em 0 .4em;
+      font-weight: 600;
+      line-height: 1.3;
+    }
+    .bubble.md h1 { font-size: 1.25em; }
+    .bubble.md h2 { font-size: 1.1em; }
+    .bubble.md h3 { font-size: 1em; color: var(--accent2); }
+
+    .bubble.md strong { color: #f0d4b0; font-weight: 600; }
+    .bubble.md em    { color: var(--accent2); font-style: italic; }
+
+    .bubble.md ul, .bubble.md ol {
+      padding-left: 1.4em;
+      margin: .4em 0 .75em;
+    }
+    .bubble.md li { margin: .25em 0; }
+
+    .bubble.md code {
+      font-family: var(--mono);
+      font-size: .85em;
+      background: #0a0c0f;
+      color: #7dd3b0;
+      padding: .15em .4em;
+      border-radius: 4px;
+      border: 1px solid #1e2730;
+    }
+
+    .bubble.md pre {
+      background: #0a0c0f;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px 14px;
+      overflow-x: auto;
+      margin: .6em 0;
+    }
+    .bubble.md pre code {
+      background: none;
+      border: none;
+      padding: 0;
+      color: #a8d8c0;
+      font-size: .82em;
+      white-space: pre;
+    }
+
+    .bubble.md blockquote {
+      border-left: 3px solid var(--accent);
+      margin: .6em 0;
+      padding: .3em 0 .3em 1em;
+      color: var(--muted);
+      font-style: italic;
+    }
+
+    .bubble.md table {
+      border-collapse: collapse;
+      width: 100%;
+      margin: .6em 0;
+      font-size: .88em;
+    }
+    .bubble.md th {
+      background: #1a1f28;
+      color: var(--accent2);
+      font-family: var(--mono);
+      font-weight: 600;
+      text-align: left;
+      padding: 6px 10px;
+      border: 1px solid var(--border);
+    }
+    .bubble.md td {
+      padding: 5px 10px;
+      border: 1px solid var(--border);
+    }
+    .bubble.md tr:nth-child(even) td { background: #12161b; }
+
+    .bubble.md a {
+      color: var(--accent2);
+      text-decoration: underline;
+      text-underline-offset: 2px;
+    }
+    .bubble.md hr {
+      border: none;
+      border-top: 1px solid var(--border);
+      margin: .8em 0;
     }
 
     /* ── Typing indicator ── */
@@ -851,8 +947,13 @@
       av.className  = "avatar";
       av.textContent = role === "user" ? "TÚ" : "AI";
       const bub = document.createElement("div");
-      bub.className  = "bubble";
-      bub.textContent = text;
+      if (role === "assistant") {
+        bub.className = "bubble md";
+        bub.innerHTML = marked.parse(text);
+      } else {
+        bub.className = "bubble plain";
+        bub.textContent = text;
+      }
       msg.appendChild(av);
       msg.appendChild(bub);
       messagesEl.appendChild(msg);
@@ -934,6 +1035,12 @@
         setLoading(false); inputEl.focus();
       }
     }
+
+    // ── Configurar marked ──
+    marked.setOptions({
+      breaks: true,       // saltos de línea simples → <br>
+      gfm: true,          // GitHub Flavored Markdown
+    });
 
     inputEl.focus();
   </script>
