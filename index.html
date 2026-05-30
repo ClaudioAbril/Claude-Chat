@@ -5,7 +5,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <link rel="icon" href="data:,">
-  <title>AI Chat – PoC – 20260527.1</title>
+  <title>AI Chat – PoC – 20260530.1</title>
   <link
     href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@300;400;500&display=swap"
     rel="stylesheet" />
@@ -1041,6 +1041,16 @@
       breaks: true,       // saltos de línea simples → <br>
       gfm: true,          // GitHub Flavored Markdown
     });
+
+    // ── Versión dinámica (fecha de generación del archivo) ──
+    (function () {
+      const pad = n => String(n).padStart(2, "0");
+      const d = new Date();
+      const ver = `${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}.1`;
+      document.title = `AI Chat – PoC – ${ver}`;
+      const h1 = document.getElementById("header-title");
+      if (h1) h1.textContent = `AI Chat · PoC · ${ver}`;
+    })();
 
     inputEl.focus();
   </script>
