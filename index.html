@@ -459,7 +459,8 @@
     }
 
     /* ── Settings panel ── */
-    #settings-btn {
+    #settings-btn,
+    #new-chat-btn {
       margin-left: 8px;
       background: none;
       border: 1px solid var(--border);
@@ -473,7 +474,8 @@
       place-items: center;
       transition: border-color .15s, color .15s;
     }
-    #settings-btn:hover { border-color: var(--accent2); color: var(--accent2); }
+    #settings-btn:hover,
+    #new-chat-btn:hover { border-color: var(--accent2); color: var(--accent2); }
     #settings-btn.active { border-color: var(--accent); color: var(--accent); }
 
     #settings-panel {
@@ -643,6 +645,7 @@
       <div class="dot" id="dot"></div>
       <span id="status-text">listo</span>
     </div>
+    <button id="new-chat-btn" title="Nuevo chat (borra la conversación actual)">＋</button>
     <button id="settings-btn" title="Configurar API Key">⚙</button>
   </header>
 
@@ -658,6 +661,7 @@
           <input id="model-custom-input" class="settings-input-sm" type="text" placeholder="id del modelo (ej: openai/gpt-oss-20b)" autocomplete="off" spellcheck="false" style="display:none" />
           <button id="test-conn-btn" class="settings-btn">Probar conexión</button>
         </div>
+        <span class="key-status" id="model-hint"></span>
         <span class="key-status" id="conn-status">El catálogo se carga al abrir el panel (con API key, NVIDIA lista los modelos habilitados para tu cuenta). "Probar conexión" valida la key y filtra los modelos vigentes con un ping a cada uno.</span>
       </div>
 
@@ -670,6 +674,12 @@
         <button id="clear-key-btn" title="Borrar key">✕</button>
       </div>
       <span class="key-status" id="key-status">Sin key configurada</span>
+
+      <!-- Fila 2b: Token de acceso del Worker (APP_TOKEN, opcional) -->
+      <span class="settings-label">Token de acceso (APP_TOKEN del Worker)</span>
+      <div class="settings-row">
+        <input id="app-token-input" type="text" placeholder="(solo si el Worker tiene APP_TOKEN configurado)" autocomplete="off" spellcheck="false" style="-webkit-text-security:disc" />
+      </div>
 
       <!-- Fila 3: Worker URL -->
       <div id="worker-url-row" class="settings-field">
@@ -738,18 +748,22 @@
     const settingsBtn     = document.getElementById("settings-btn");
     const settingsPanel   = document.getElementById("settings-panel");
     const apiKeyInput     = document.getElementById("api-key-input");
+    const appTokenInput   = document.getElementById("app-token-input");
     const saveKeyBtn      = document.getElementById("save-key-btn");
     const clearKeyBtn     = document.getElementById("clear-key-btn");
     const toggleKeyBtn    = document.getElementById("toggle-key-btn");
     const keyStatus       = document.getElementById("key-status");
+    const newChatBtn      = document.getElementById("new-chat-btn");
     const modelSelect     = document.getElementById("model-select");
     const modelCustomInput = document.getElementById("model-custom-input");
+    const modelHint       = document.getElementById("model-hint");
     const testConnBtn     = document.getElementById("test-conn-btn");
     const connStatus      = document.getElementById("conn-status");
     const workerUrlInput  = document.getElementById("worker-url-input");
 
     // ── LocalStorage keys ──
     const LS_KEY   = "poc_api_key";
+    const LS_TOKEN = "poc_app_token";
     const LS_MODEL = "poc_model";
     const LS_WORKER = "poc_worker_url";
 
@@ -760,9 +774,45 @@
     function getModel()     { return load(LS_MODEL) || DEFAULT_MODEL; }
     function getWorkerUrl() { return load(LS_WORKER) || DEFAULT_WORKER_URL; }
     function getApiKey()    { return load(LS_KEY); }
+    function getAppToken()  { return load(LS_TOKEN); }
+
+    // Headers comunes para TODAS las llamadas al Worker: API key de NVIDIA
+    // (opcional, si falta usa la del Worker) y token de acceso (obligatorio
+    // si el Worker tiene APP_TOKEN definido).
+    function apiHeaders(extra = {}) {
+      const h = { ...extra };
+      const key = getApiKey();
+      const tok = getAppToken();
+      if (key) h["Authorization"] = `Bearer ${key}`;
+      if (tok) h["x-app-token"]   = tok;
+      return h;
+    }
 
     // ── Selección de modelo (lista desplegable del catálogo NIM) ──
     const CUSTOM_OPT = "__custom__";
+
+    // Categorías "para qué es bueno" cada modelo. La API de NVIDIA no expone
+    // capacidades, así que se estiman por el nombre (los ids son descriptivos:
+    // starcoder, embedqa, riva-translate, nemoguard, vision, parse...).
+    // Se evalúan EN ORDEN: el primer match gana; el resto cae en Chat general.
+    const CHAT_LABEL = "Chat general";
+    const MODEL_CATEGORIES = [
+      { label: "Traducción",           re: /translate/i },
+      { label: "Embeddings / búsqueda", re: /embed|retriev|rerank/i },
+      { label: "Moderación / seguridad", re: /guard|safety|topic-control/i },
+      { label: "Reward",               re: /reward/i },
+      { label: "OCR / documentos",     re: /parse|ocr/i },
+      { label: "Voz / audio",          re: /riva|tts|asr|voice|whisper|parakeet|canary/i },
+      { label: "Video",                re: /video|cosmos/i },
+      { label: "Imágenes",             re: /\bimage|sdxl|stable-diffusion/i },
+      { label: "Visión",               re: /vision|vlm|neva|vila|kosmos|deplot|fuyu|-vl-|clip/i },
+      { label: "Código",               re: /code|laguna/i },
+    ];
+
+    function classifyModel(id) {
+      for (const c of MODEL_CATEGORIES) if (c.re.test(id)) return c.label;
+      return CHAT_LABEL;
+    }
 
     // Modelo vigente según el panel: el elegido en el dropdown o el escrito
     // a mano (opción "Otro modelo…"). Fallback: modelo persistido / default.
@@ -771,22 +821,59 @@
       return modelSelect.value || getModel();
     }
 
-    // Puebla el <select> con el catálogo. El modelo actualmente guardado sigue
-    // siendo elegible aunque NVIDIA lo haya retirado del catálogo.
+    // Línea bajo el dropdown: para qué sirve el modelo elegido.
+    function updateModelHint() {
+      const m = getSelectedModel();
+      if (!m) { modelHint.textContent = ""; return; }
+      modelHint.textContent = `${m} — ${classifyModel(m)} (estimado por nombre)`;
+    }
+
+    // Puebla el <select> agrupando por categoría (optgroup). El modelo
+    // actualmente guardado sigue siendo elegible aunque NVIDIA lo haya
+    // retirado del catálogo.
     function populateModelSelect(models) {
       const current = getSelectedModel();
+      // Agrupar respetando el orden de MODEL_CATEGORIES; Chat general primero.
+      const groups = new Map();
+      for (const m of models) {
+        const cat = classifyModel(m);
+        if (!groups.has(cat)) groups.set(cat, []);
+        groups.get(cat).push(m);
+      }
       modelSelect.innerHTML = "";
-      for (const m of models) modelSelect.add(new Option(m, m));
-      if (current && !models.includes(current)) modelSelect.add(new Option(current, current));
-      modelSelect.add(new Option("Otro modelo (escritura manual)…", CUSTOM_OPT));
+      const ordered = [CHAT_LABEL, ...MODEL_CATEGORIES.map((c) => c.label)]
+        .filter((label) => groups.has(label));
+      for (const label of ordered) {
+        const og = document.createElement("optgroup");
+        og.label = label;
+        for (const m of groups.get(label).sort((a, b) => a.localeCompare(b))) {
+          og.appendChild(new Option(m, m));
+        }
+        modelSelect.appendChild(og);
+      }
+      if (current && !models.includes(current)) {
+        const og = document.createElement("optgroup");
+        og.label = "Guardado (no en catálogo)";
+        og.appendChild(new Option(current, current));
+        modelSelect.insertBefore(og, modelSelect.firstChild);
+      }
+      const customOg = document.createElement("optgroup");
+      customOg.label = "Otro";
+      customOg.appendChild(new Option("Otro modelo (escritura manual)…", CUSTOM_OPT));
+      modelSelect.appendChild(customOg);
       modelSelect.value = current || models[0] || CUSTOM_OPT;
       syncCustomInputVisibility();
+      updateModelHint();
     }
 
     function syncCustomInputVisibility() {
       modelCustomInput.style.display = modelSelect.value === CUSTOM_OPT ? "" : "none";
     }
-    modelSelect.addEventListener("change", syncCustomInputVisibility);
+    modelSelect.addEventListener("change", () => {
+      syncCustomInputVisibility();
+      updateModelHint();
+    });
+    modelCustomInput.addEventListener("input", updateModelHint);
 
     // ── Actualizar badge del header ──
     function updateBadge() {
@@ -816,7 +903,9 @@
       modelSelect.value = current;
       workerUrlInput.value = getWorkerUrl();
       apiKeyInput.value    = getApiKey();
+      appTokenInput.value  = getAppToken();
       refreshKeyStatus();
+      updateModelHint();
     }
 
     function refreshKeyStatus() {
@@ -843,8 +932,23 @@
       if (opening) loadModelsIntoSelect();
     });
 
+    // ── Nuevo chat: borra la conversación y los contadores de la sesión ──
+    newChatBtn.addEventListener("click", () => {
+      if (busy) return; // no cortar una generación en curso
+      chatHistory.length = 0;
+      messagesEl.innerHTML = "";
+      emptyEl.style.display = "";
+      totalIn = 0; totalOut = 0;
+      statIn.textContent = statOut.textContent = statTokens.textContent = "0";
+      errorBar.style.display = "none";
+      dotEl.className = "dot";
+      statusEl.textContent = "listo";
+      inputEl.focus();
+    });
+
     saveKeyBtn.addEventListener("click", () => {
       save(LS_KEY,    apiKeyInput.value.trim());
+      save(LS_TOKEN,  appTokenInput.value.trim());
       save(LS_MODEL,  getSelectedModel() || DEFAULT_MODEL);
       save(LS_WORKER, workerUrlInput.value.trim());
       refreshKeyStatus();
@@ -885,8 +989,7 @@
     // autenticada: NVIDIA devuelve los modelos habilitados para la cuenta.
     // Devuelve el array de ids ordenado; lanza Error si falla.
     async function fetchModelCatalog(workerUrl, apiKey) {
-      const headers = apiKey ? { "Authorization": `Bearer ${apiKey}` } : {};
-      const res = await fetch(deriveModelsUrl(workerUrl), { headers });
+      const res = await fetch(deriveModelsUrl(workerUrl), { headers: apiHeaders() });
       if (!res.ok) {
         const errBody = await res.json().catch(() => ({}));
         throw new Error(errBody?.error?.message || `HTTP ${res.status} listando modelos`);
@@ -952,7 +1055,7 @@
     async function testConnection() {
       const workerUrl = workerUrlInput.value.trim() || getWorkerUrl();
       const apiKey    = apiKeyInput.value.trim();
-      const headers   = apiKey ? { "Authorization": `Bearer ${apiKey}` } : {};
+      const headers   = apiHeaders();
 
       testConnBtn.disabled = true;
       connStatus.className = "key-status";
@@ -1005,31 +1108,33 @@
     // ══════════════════════════════════════════
     //  Construcción de request (NVIDIA NIM vía Worker, OpenAI-compatible)
     // ══════════════════════════════════════════
+
+    // Máximo de mensajes del historial que se envían al modelo (los últimos).
+    // El historial completo se muestra en pantalla; enviar TODO crecería sin
+    // límite hasta superar el contexto del modelo (error 400).
+    const MAX_HISTORY_MESSAGES = 20;
+
     function buildRequest(chatHistory) {
-      const model  = getSelectedModel() || getModel();
-      const apiKey = getApiKey();
+      const model = getSelectedModel() || getModel();
+      const history = chatHistory.slice(-MAX_HISTORY_MESSAGES);
 
       const oaiMessages = [
         { role: "system", content: SYSTEM },
-        ...chatHistory.map(m => ({ role: m.role === "assistant" ? "assistant" : "user", content: m.content })),
+        ...history.map(m => ({ role: m.role === "assistant" ? "assistant" : "user", content: m.content })),
       ];
       return {
         url: getWorkerUrl(),
-        headers: {
-          "Content-Type":  "application/json",
-          // La key del cliente tiene prioridad; si falta, el Worker usa su
-          // variable de entorno NVIDIA_API_KEY.
-          ...(apiKey ? { "Authorization": `Bearer ${apiKey}` } : {}),
-        },
+        headers: { "Content-Type": "application/json", ...apiHeaders() },
         body: JSON.stringify({
           model,
           max_tokens: 1024,
+          stream: true,          // streaming: el Worker re-envía el SSE tal cual
           messages: oaiMessages,
         }),
       };
     }
 
-    // ── Extraer texto y usage de la respuesta (OpenAI-compatible) ──
+    // ── Extraer texto y usage de la respuesta JSON no-stream (fallback) ──
     function parseResponse(data) {
       const text = data.choices?.[0]?.message?.content ?? "(sin respuesta)";
       const usage = data.usage
@@ -1037,6 +1142,56 @@
         : null;
       return { text, usage };
     }
+
+    // ── Streaming SSE (OpenAI-compatible) ──────────────────────────────────
+    // Lee data: {json}\n\n acumulando delta.content; captura usage del chunk
+    // final si el servidor lo manda. Modelos "reasoning" pueden mandar solo
+    // delta.reasoning_content: se acumula como fallback (sin etiquetas think).
+    async function readSSE(res, onDelta) {
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = "", content = "", reasoning = "", usage = null;
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        let idx;
+        while ((idx = buf.indexOf("\n")) >= 0) {
+          const line = buf.slice(0, idx).trim();
+          buf = buf.slice(idx + 1);
+          if (!line.startsWith("data:")) continue;
+          const payload = line.slice(5).trim();
+          if (!payload || payload === "[DONE]") continue;
+          try {
+            const j = JSON.parse(payload);
+            const delta = j.choices?.[0]?.delta || {};
+            if (delta.content) {
+              content += delta.content;
+              if (onDelta) onDelta(delta.content);
+            }
+            if (delta.reasoning_content) reasoning += delta.reasoning_content;
+            if (j.usage) {
+              usage = {
+                input_tokens:  j.usage.prompt_tokens    ?? j.usage.input_tokens  ?? 0,
+                output_tokens: j.usage.completion_tokens ?? j.usage.output_tokens ?? 0,
+              };
+            }
+          } catch { /* línea parcial u otro evento */ }
+        }
+      }
+      const text = content || stripReasoning(reasoning);
+      return { text, usage };
+    }
+
+    // Limpia bloques de pensamiento (<think>...</think>) y colapsa espacios.
+    function stripReasoning(value) {
+      if (typeof value !== "string" || !value.trim()) return "";
+      return value.replace(/<think[\s\S]*?<\/think>/gi, "").replace(/\s+/g, " ").trim();
+    }
+
+    // Estimación de tokens (4 chars ≈ 1 token) para cuando el servidor no
+    // manda usage en el stream.
+    function estimateTokens(str) { return Math.ceil((str || "").length / 4); }
 
     // ══════════════════════════════════════════
     const chatHistory = [];
@@ -1139,6 +1294,15 @@
       log("info", "Model:", getSelectedModel() || getModel());
       log("info", "→", req.url);
 
+      // Burbuja en vivo: se crea con el primer chunk y crece con el stream
+      // (texto plano mientras llega; al final se renderiza el markdown).
+      let liveBubble = null;
+      const onDelta = (delta) => {
+        if (!liveBubble) { removeTyping(); liveBubble = addBubble("assistant", ""); }
+        liveBubble.textContent += delta;
+        messagesEl.scrollTop = messagesEl.scrollHeight;
+      };
+
       try {
         const res = await fetch(req.url, { method: "POST", headers: req.headers, body: req.body });
         log("info", "Status:", res.status, res.statusText);
@@ -1150,14 +1314,28 @@
           throw new Error(errBody?.error?.message || `HTTP ${res.status}`);
         }
 
-        const data = await res.json();
-        log("info", "Response:", data);
-
-        const { text: reply, usage } = parseResponse(data);
+        // Si el endpoint no hizo streaming devolvió JSON (content-type no SSE):
+        // se procesa por el camino de siempre.
+        const ct = res.headers.get("content-type") || "";
+        let reply, usage;
+        if (ct.includes("text/event-stream")) {
+          ({ text: reply, usage } = await readSSE(res, onDelta));
+          log("info", "Stream completo.");
+        } else {
+          const data = await res.json();
+          log("info", "Response:", data);
+          ({ text: reply, usage } = parseResponse(data));
+        }
+        if (!reply) reply = "(sin respuesta)";
         if (usage) updateTokens(usage);
+        else updateTokens({
+          input_tokens:  estimateTokens(req.body),
+          output_tokens: estimateTokens(reply),
+        });
 
         removeTyping();
-        addBubble("assistant", reply);
+        if (liveBubble) liveBubble.innerHTML = marked.parse(reply);
+        else addBubble("assistant", reply);
         chatHistory.push({ role: "assistant", content: reply });
 
       } catch (err) {

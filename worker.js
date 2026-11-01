@@ -9,15 +9,19 @@
  * ║                                                          ║
  * ║  Headers que acepta del cliente:                         ║
  * ║    Authorization    → Bearer <token> NVIDIA (opcional)   ║
+ * ║    x-app-token      → Token de acceso (si APP_TOKEN está ║
+ * ║                       definido, es OBLIGATORIO)          ║
  * ║                                                          ║
  * ║  Variables de entorno del Worker (wrangler secret put):  ║
  * ║    NVIDIA_API_KEY                                        ║
+ * ║    APP_TOKEN        → candado opcional: si se define,    ║
+ * ║                       todos los pedidos deben traer el   ║
+ * ║                       header x-app-token con ese valor.  ║
+ * ║                       Evita que cualquiera con la URL    ║
+ * ║                       pública use la API key.            ║
  * ║                                                          ║
- * ║  Mecanismo de selección de modelos (igual que en         ║
- * ║  Analizador-Vulnerabilidades): la UI llama a /v1/models  ║
- * ║  con el botón "Probar conexión" y llena el dropdown del  ║
- * ║  campo "Modelo"; el catálogo es público, así que la      ║
- * ║  autenticación se valida aparte con un chat mínimo.      ║
+ * ║  El chat se transmite en STREAMING: la respuesta upstream ║
+ * ║  se re-envía tal cual (SSE si el cliente pidió stream).  ║
  * ╚══════════════════════════════════════════════════════════╝
  */
 
@@ -33,6 +37,7 @@ const CORS = {
   "Access-Control-Allow-Headers": [
     "Content-Type",
     "Authorization",
+    "x-app-token",
   ].join(", "),
 };
 
@@ -43,6 +48,17 @@ export default {
     // 1. Preflight CORS
     if (request.method === "OPTIONS") {
       return new Response(null, { status: 204, headers: CORS });
+    }
+
+    // 2. Candado de acceso (opcional): si APP_TOKEN está definido en el
+    //    Worker, TODO pedido debe traer el header x-app-token con ese valor.
+    //    Sin esto, cualquiera con la URL pública podría usar la NVIDIA_API_KEY.
+    const appToken = env.APP_TOKEN ?? "";
+    if (appToken && request.headers.get("x-app-token") !== appToken) {
+      return errResponse(
+        "Token de acceso inválido o ausente (header x-app-token). Configuralo en el panel ⚙.",
+        401
+      );
     }
 
     const path = new URL(request.url).pathname;
@@ -129,10 +145,16 @@ async function handleModels(request, env) {
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
-/** Devuelve la respuesta upstream con los headers CORS agregados. */
-async function proxyResponse(upstream) {
-  const body = await upstream.text();
-  return new Response(body, {
+/**
+ * Devuelve la respuesta upstream con los headers CORS agregados.
+ *
+ * Pasa el body COMO STREAM (upstream.body) en lugar de bufferizarlo: si el
+ * cliente pidió stream:true, NVIDIA responde SSE y los chunks llegan al
+ * browser a medida que el modelo genera. Para respuestas JSON normales el
+ * body también fluye igual (es un buffer chico).
+ */
+function proxyResponse(upstream) {
+  return new Response(upstream.body, {
     status:  upstream.status,
     headers: {
       ...CORS,
