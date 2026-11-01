@@ -588,7 +588,7 @@
       gap: 5px;
     }
 
-    input.settings-input-sm {
+    input.settings-input-sm, select.settings-input-sm {
       background: var(--bg);
       border: 1px solid var(--border);
       border-radius: var(--radius);
@@ -600,7 +600,9 @@
       transition: border-color .15s;
       width: 100%;
     }
-    input.settings-input-sm:focus { border-color: var(--accent2); }
+    select.settings-input-sm { cursor: pointer; }
+    input.settings-input-sm:focus,
+    select.settings-input-sm:focus { border-color: var(--accent2); }
 
     .provider-badge {
       display: inline-flex;
@@ -648,15 +650,15 @@
   <div id="settings-panel">
     <div class="settings-inner">
 
-      <!-- Fila 1: Modelo (dropdown vía /v1/models) + Probar conexión -->
+      <!-- Fila 1: Modelo (lista desplegable vía /v1/models) + Probar conexión -->
       <div class="settings-field">
         <span class="settings-label">Modelo</span>
         <div class="settings-row">
-          <input id="model-input" class="settings-input-sm" type="text" list="model-list" placeholder="meta/llama-3.3-70b-instruct" autocomplete="off" spellcheck="false" />
+          <select id="model-select" class="settings-input-sm" title="Modelos del catálogo NVIDIA NIM"></select>
+          <input id="model-custom-input" class="settings-input-sm" type="text" placeholder="id del modelo (ej: openai/gpt-oss-20b)" autocomplete="off" spellcheck="false" style="display:none" />
           <button id="test-conn-btn" class="settings-btn">Probar conexión</button>
         </div>
-        <datalist id="model-list"></datalist>
-        <span class="key-status" id="conn-status">Usá "Probar conexión" para listar los modelos disponibles y validar la API key.</span>
+        <span class="key-status" id="conn-status">El catálogo se carga al abrir el panel (con API key, NVIDIA lista los modelos habilitados para tu cuenta). "Probar conexión" valida la key y filtra los modelos vigentes con un ping a cada uno.</span>
       </div>
 
       <!-- Fila 2: API Key -->
@@ -706,7 +708,9 @@
     //  DEFAULTS  ← se pueden cambiar acá o desde el panel ⚙
     // ══════════════════════════════════════════
     const DEFAULT_WORKER_URL = "https://muddy-wildflower-c8f9.claudioabril1000.workers.dev/v1/chat/completions";
-    const DEFAULT_MODEL      = "meta/llama-3.3-70b-instruct";
+    // Modelo por defecto: debe existir en el catálogo vigente de NVIDIA NIM
+    // (se verifica contra /v1/models; elegí uno estable del catálogo actual).
+    const DEFAULT_MODEL      = "openai/gpt-oss-20b";
     const SYSTEM = "Eres un asistente útil y conciso. Respondés en el mismo idioma del usuario.";
 
     // Proveedor único: NVIDIA NIM vía el Worker (OpenAI-compatible).
@@ -732,8 +736,8 @@
     const clearKeyBtn     = document.getElementById("clear-key-btn");
     const toggleKeyBtn    = document.getElementById("toggle-key-btn");
     const keyStatus       = document.getElementById("key-status");
-    const modelInput      = document.getElementById("model-input");
-    const modelList       = document.getElementById("model-list");
+    const modelSelect     = document.getElementById("model-select");
+    const modelCustomInput = document.getElementById("model-custom-input");
     const testConnBtn     = document.getElementById("test-conn-btn");
     const connStatus      = document.getElementById("conn-status");
     const workerUrlInput  = document.getElementById("worker-url-input");
@@ -751,9 +755,36 @@
     function getWorkerUrl() { return load(LS_WORKER) || DEFAULT_WORKER_URL; }
     function getApiKey()    { return load(LS_KEY); }
 
+    // ── Selección de modelo (lista desplegable del catálogo NIM) ──
+    const CUSTOM_OPT = "__custom__";
+
+    // Modelo vigente según el panel: el elegido en el dropdown o el escrito
+    // a mano (opción "Otro modelo…"). Fallback: modelo persistido / default.
+    function getSelectedModel() {
+      if (modelSelect.value === CUSTOM_OPT) return modelCustomInput.value.trim() || getModel();
+      return modelSelect.value || getModel();
+    }
+
+    // Puebla el <select> con el catálogo. El modelo actualmente guardado sigue
+    // siendo elegible aunque NVIDIA lo haya retirado del catálogo.
+    function populateModelSelect(models) {
+      const current = getSelectedModel();
+      modelSelect.innerHTML = "";
+      for (const m of models) modelSelect.add(new Option(m, m));
+      if (current && !models.includes(current)) modelSelect.add(new Option(current, current));
+      modelSelect.add(new Option("Otro modelo (escritura manual)…", CUSTOM_OPT));
+      modelSelect.value = current || models[0] || CUSTOM_OPT;
+      syncCustomInputVisibility();
+    }
+
+    function syncCustomInputVisibility() {
+      modelCustomInput.style.display = modelSelect.value === CUSTOM_OPT ? "" : "none";
+    }
+    modelSelect.addEventListener("change", syncCustomInputVisibility);
+
     // ── Actualizar badge del header ──
     function updateBadge() {
-      headerBadge.textContent = `nvidia · ${getModel()}`;
+      headerBadge.textContent = `nvidia · ${getSelectedModel()}`;
     }
 
     // ── Cargar estado guardado en el panel ──
@@ -765,7 +796,13 @@
       if (saved && /\/v1\/messages\/?$/i.test(saved)) {
         save(LS_WORKER, saved.replace(/\/v1\/messages\/?$/i, "/v1/chat/completions"));
       }
-      modelInput.value     = getModel();
+      // Select inicial: solo el modelo guardado; el catálogo completo se
+      // carga al abrir el panel (o con "Probar conexión").
+      const current = getModel();
+      modelSelect.innerHTML = "";
+      modelSelect.add(new Option(current, current));
+      modelSelect.add(new Option("Otro modelo (escritura manual)…", CUSTOM_OPT));
+      modelSelect.value = current;
       workerUrlInput.value = getWorkerUrl();
       apiKeyInput.value    = getApiKey();
       refreshKeyStatus();
@@ -789,12 +826,15 @@
     updateBadge();
 
     settingsBtn.addEventListener("click", () => {
+      const opening = !settingsPanel.classList.contains("open");
       settingsPanel.classList.toggle("open");
+      // Al abrir el panel se refresca el catálogo de modelos del dropdown
+      if (opening) loadModelsIntoSelect();
     });
 
     saveKeyBtn.addEventListener("click", () => {
       save(LS_KEY,    apiKeyInput.value.trim());
-      save(LS_MODEL,  modelInput.value.trim());
+      save(LS_MODEL,  getSelectedModel() || DEFAULT_MODEL);
       save(LS_WORKER, workerUrlInput.value.trim());
       refreshKeyStatus();
       updateBadge();
@@ -813,16 +853,11 @@
       refreshKeyStatus();
     });
 
-    // ── Probar conexión (mecanismo de Analizador-Vulnerabilidades) ──────────
-    // 1) Lista los modelos del catálogo (GET /v1/models del Worker) y llena el
-    //    dropdown (datalist) del campo "Modelo".
-    // 2) Como el catálogo es público y NO valida la key, envía un chat mínimo
-    //    con el modelo elegido para verificar autenticación y disponibilidad.
-    function esc(s) {
-      return String(s).replace(/[&<>"']/g, (c) => ({
-        "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
-      }[c]));
-    }
+    // ── Catálogo de modelos + Probar conexión ───────────────────────────────
+    // Mecanismo de Analizador-Vulnerabilidades, adaptado a NVIDIA NIM:
+    // el catálogo (GET /v1/models del Worker) alimenta la lista desplegable
+    // del campo "Modelo". Como el listado público NO valida la key, la
+    // autenticación se verifica aparte con un chat mínimo ("ping").
 
     // Deriva la URL de listado de modelos a partir de la URL del Worker.
     // Funciona tanto si apunta a /v1/chat/completions como a la raíz del
@@ -835,6 +870,74 @@
       return `${base}/v1/models`;
     }
 
+    // Descarga el catálogo de modelos. Si hay API key, la petición va
+    // autenticada: NVIDIA devuelve los modelos habilitados para la cuenta.
+    // Devuelve el array de ids ordenado; lanza Error si falla.
+    async function fetchModelCatalog(workerUrl, apiKey) {
+      const headers = apiKey ? { "Authorization": `Bearer ${apiKey}` } : {};
+      const res = await fetch(deriveModelsUrl(workerUrl), { headers });
+      if (!res.ok) {
+        const errBody = await res.json().catch(() => ({}));
+        throw new Error(errBody?.error?.message || `HTTP ${res.status} listando modelos`);
+      }
+      const data = await res.json();
+      return (Array.isArray(data?.data) ? data.data : [])
+        .map((m) => m?.id).filter(Boolean).sort((a, b) => a.localeCompare(b));
+    }
+
+    // Refresca el dropdown del campo "Modelo" con el catálogo vigente.
+    async function loadModelsIntoSelect() {
+      connStatus.className = "key-status";
+      connStatus.textContent = "Cargando catálogo de modelos…";
+      try {
+        const models = await fetchModelCatalog(
+          workerUrlInput.value.trim() || getWorkerUrl(),
+          apiKeyInput.value.trim()
+        );
+        populateModelSelect(models);
+        connStatus.textContent = `Catálogo cargado: ${models.length} modelos disponibles.`;
+      } catch (err) {
+        connStatus.textContent = `No se pudo cargar el catálogo: ${err.message}`;
+        connStatus.className = "key-status missing";
+      }
+    }
+
+    // Ping mínimo a un modelo (idem Analizador): valida que exista y que la
+    // key lo pueda invocar. 429 (rate limit) cuenta como vigente: el modelo
+    // existe y respondió, solo está saturado. 15 s de timeout por modelo.
+    async function pingModel(workerUrl, headers, model) {
+      const res = await fetch(workerUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...headers },
+        body: JSON.stringify({
+          model,
+          max_tokens: 1,
+          messages: [{ role: "user", content: "ping" }],
+        }),
+        signal: AbortSignal.timeout(15000),
+      });
+      return res.ok || res.status === 429;
+    }
+
+    // Valida el catálogo completo con pings en paralelo (concurrencia fija
+    // para no chocar con los rate limits). Devuelve el Set de ids vigentes.
+    async function validateModels(workerUrl, headers, models, onProgress) {
+      const okSet = new Set();
+      const queue = [...models];
+      let done = 0;
+      const CONCURRENCY = 6;
+      async function loop() {
+        while (queue.length) {
+          const m = queue.shift();
+          try { if (await pingModel(workerUrl, headers, m)) okSet.add(m); } catch { /* inválido o timeout */ }
+          done++;
+          if (onProgress) onProgress(done, models.length);
+        }
+      }
+      await Promise.all(Array.from({ length: Math.min(CONCURRENCY, models.length) }, loop));
+      return okSet;
+    }
+
     async function testConnection() {
       const workerUrl = workerUrlInput.value.trim() || getWorkerUrl();
       const apiKey    = apiKeyInput.value.trim();
@@ -845,43 +948,39 @@
       connStatus.textContent = "Probando conexión…";
 
       try {
-        // 1) Catálogo de modelos → dropdown del campo "Modelo"
-        const res = await fetch(deriveModelsUrl(workerUrl), { headers });
-        if (!res.ok) {
-          const errBody = await res.json().catch(() => ({}));
-          throw new Error(errBody?.error?.message || `HTTP ${res.status} listando modelos`);
-        }
-        const data = await res.json();
-        const models = (Array.isArray(data?.data) ? data.data : [])
-          .map((m) => m?.id).filter(Boolean).sort((a, b) => a.localeCompare(b));
-        if (models.length) {
-          modelList.innerHTML = models.map((m) => `<option value="${esc(m)}">`).join("");
-        }
+        // 1) Catálogo de modelos (habilitados para la cuenta si hay key)
+        const models = await fetchModelCatalog(workerUrl, apiKey);
 
-        // 2) Validación de key/modelo con un chat mínimo (idem Analizador)
-        let message = `Conexión OK. ${models.length} modelos disponibles.`;
-        const model = modelInput.value.trim();
-        if (model) {
-          const ping = await fetch(workerUrl, {
-            method: "POST",
-            headers: { "Content-Type": "application/json", ...headers },
-            body: JSON.stringify({
-              model,
-              max_tokens: 3,
-              messages: [{ role: "user", content: "ping" }],
-            }),
+        // 2) Validación de vigencia: ping a CADA modelo (solo con key, si no
+        //    todos fallarían por autenticación). Deja en el dropdown únicamente
+        //    los que respondieron.
+        let usable = models;
+        if (apiKey && models.length) {
+          connStatus.textContent = `Validando ${models.length} modelos (uno por uno)…`;
+          const okSet = await validateModels(workerUrl, headers, models, (d, t) => {
+            connStatus.textContent = `Validando modelos… ${d}/${t}`;
           });
-          if (ping.ok) {
-            message += ` Modelo "${model}" validado.`;
-          } else {
-            const errBody = await ping.json().catch(() => ({}));
-            message += ` ⚠️ No se pudo validar el modelo "${model}": ${errBody?.error?.message || `HTTP ${ping.status}`}`;
-          }
+          // Si NINGUNO respondió, el problema es la key (401): no dejar el
+          // dropdown vacío; mostrar el catálogo y avisar.
+          if (okSet.size > 0) usable = models.filter((m) => okSet.has(m));
+        }
+        populateModelSelect(usable);
+
+        let message;
+        if (!apiKey) {
+          message = `Catálogo cargado: ${models.length} modelos. ⚠️ Sin API key no se puede validar cuáles están vigentes — configurá tu key y volvé a probar.`;
+          connStatus.className = "key-status missing";
+        } else if (usable.length === 0) {
+          message = `⚠️ Ningún modelo respondió con esta key. Verificá la API key en "API Key / Token".`;
+          connStatus.className = "key-status missing";
+        } else if (usable.length < models.length) {
+          message = `Conexión OK. ${usable.length} de ${models.length} modelos habilitados y vigentes (validados con ping).`;
+          connStatus.className = "key-status ok";
         } else {
-          message += " Escribí o elegí un modelo para validar la autenticación.";
+          message = `Conexión OK. Los ${models.length} modelos del catálogo están vigentes.`;
+          connStatus.className = "key-status ok";
         }
         connStatus.textContent = message;
-        connStatus.className = models.length ? "key-status ok" : "key-status missing";
       } catch (err) {
         connStatus.textContent = `Error: ${err.message}`;
         connStatus.className = "key-status missing";
@@ -896,7 +995,7 @@
     //  Construcción de request (NVIDIA NIM vía Worker, OpenAI-compatible)
     // ══════════════════════════════════════════
     function buildRequest(chatHistory) {
-      const model  = getModel();
+      const model  = getSelectedModel() || getModel();
       const apiKey = getApiKey();
 
       const oaiMessages = [
@@ -1026,7 +1125,7 @@
       setLoading(true); addTyping();
 
       const req = buildRequest(chatHistory);
-      log("info", "Model:", getModel());
+      log("info", "Model:", getSelectedModel() || getModel());
       log("info", "→", req.url);
 
       try {
