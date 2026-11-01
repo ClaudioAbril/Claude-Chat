@@ -1,0 +1,8 @@
+# Archivos del repo que NO se publican como assets estáticos del Worker
+# (sintaxis tipo .gitignore). Evita exponer el historial git y los scripts
+# locales por la URL pública del workers.dev.
+.git
+.gitignore
+.assetsignore
+subir.bat
+desplegar.bat
