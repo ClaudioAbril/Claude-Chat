@@ -1,41 +1,38 @@
 /**
  * ╔══════════════════════════════════════════════════════════╗
- * ║  AI Proxy Worker  –  Multi-provider                     ║
+ * ║  AI Proxy Worker  –  NVIDIA NIM (OpenAI-compatible)      ║
  * ║                                                          ║
  * ║  Rutas:                                                  ║
- * ║    POST /v1/messages          → Anthropic               ║
- * ║    POST /v1/chat/completions  → GitHub Models / OpenAI  ║
- * ║    OPTIONS *                  → CORS preflight          ║
+ * ║    POST /v1/chat/completions  → Chat (NVIDIA NIM)        ║
+ * ║    GET  /v1/models            → Catálogo de modelos      ║
+ * ║    OPTIONS *                  → CORS preflight           ║
  * ║                                                          ║
  * ║  Headers que acepta del cliente:                         ║
- * ║    x-user-api-key   → API key Anthropic (opcional)      ║
- * ║    Authorization    → Bearer <token> para OAI/GitHub    ║
- * ║    x-provider       → "github" | "openai" (default)     ║
+ * ║    Authorization    → Bearer <token> NVIDIA (opcional)   ║
  * ║                                                          ║
  * ║  Variables de entorno del Worker (wrangler secret put):  ║
- * ║    ANTHROPIC_API_KEY                                     ║
- * ║    GITHUB_TOKEN                                          ║
- * ║    OPENAI_API_KEY                                        ║
+ * ║    NVIDIA_API_KEY                                        ║
+ * ║                                                          ║
+ * ║  Mecanismo de selección de modelos (igual que en         ║
+ * ║  Analizador-Vulnerabilidades): la UI llama a /v1/models  ║
+ * ║  con el botón "Probar conexión" y llena el dropdown del  ║
+ * ║  campo "Modelo"; el catálogo es público, así que la      ║
+ * ║  autenticación se valida aparte con un chat mínimo.      ║
  * ╚══════════════════════════════════════════════════════════╝
  */
 
-const UPSTREAMS = {
-  anthropic: "https://api.anthropic.com/v1/messages",
-  github:    "https://models.inference.ai.azure.com/chat/completions",
-  openai:    "https://api.openai.com/v1/chat/completions",
-};
+// Base OpenAI-compatible de NVIDIA NIM (mismo preset que usa
+// Analizador-Vulnerabilidades).
+const NVIDIA_BASE = "https://integrate.api.nvidia.com/v1";
 
 // CORS headers presentes en TODAS las respuestas (incluyendo errores).
 // Sin esto el browser no puede leer el body de una 4xx y muestra "Failed to fetch".
 const CORS = {
   "Access-Control-Allow-Origin":  "*",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
   "Access-Control-Allow-Headers": [
     "Content-Type",
     "Authorization",
-    "anthropic-version",
-    "x-user-api-key",
-    "x-provider",
   ].join(", "),
 };
 
@@ -48,81 +45,40 @@ export default {
       return new Response(null, { status: 204, headers: CORS });
     }
 
-    if (request.method !== "POST") {
-      return errResponse("Method Not Allowed", 405);
-    }
-
     const path = new URL(request.url).pathname;
 
-    if (path === "/v1/messages") {
-      return handleAnthropic(request, env);
+    if (path === "/v1/chat/completions" && request.method === "POST") {
+      return handleChat(request, env);
     }
 
-    if (path === "/v1/chat/completions") {
-      return handleOpenAICompat(request, env);
+    if (path === "/v1/models" && request.method === "GET") {
+      return handleModels(request, env);
     }
 
-    return errResponse(`Unknown path: ${path}`, 404);
+    return errResponse(`Method Not Allowed para: ${request.method} ${path}`, 405);
   },
 };
 
-// ── Handler: Anthropic ─────────────────────────────────────────────────────
+// ── Auth ───────────────────────────────────────────────────────────────────
 
-async function handleAnthropic(request, env) {
-  // Prioridad: key del cliente → variable de entorno del Worker
-  const apiKey =
-    request.headers.get("x-user-api-key") ||
-    (env.ANTHROPIC_API_KEY ?? "");
-
-  if (!apiKey) {
-    return errResponse(
-      "No Anthropic API key. Configurá una en el panel ⚙ o en las variables del Worker.",
-      401
-    );
-  }
-
-  const body = await request.text();
-
-  let upstream;
-  try {
-    upstream = await fetch(UPSTREAMS.anthropic, {
-      method: "POST",
-      headers: {
-        "Content-Type":      "application/json",
-        "anthropic-version": request.headers.get("anthropic-version") || "2023-06-01",
-        "x-api-key":         apiKey,
-      },
-      body,
-    });
-  } catch (e) {
-    return errResponse(`Error conectando con Anthropic: ${e.message}`, 502);
-  }
-
-  return proxyResponse(upstream);
-}
-
-// ── Handler: OpenAI-compatible (GitHub Models, OpenAI) ────────────────────
-
-async function handleOpenAICompat(request, env) {
-  const provider = (request.headers.get("x-provider") || "openai").toLowerCase();
-
-  if (!UPSTREAMS[provider]) {
-    return errResponse(`Provider desconocido: "${provider}". Usá "github" u "openai".`, 400);
-  }
-
-  // Extraer token del header Authorization: "Bearer <token>"
+/**
+ * Resuelve la API key de NVIDIA.
+ * Prioridad: key del cliente (Authorization: Bearer) → variable del Worker.
+ */
+function resolveApiKey(request, env) {
   const authHeader = request.headers.get("authorization") ?? "";
   const clientKey  = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : authHeader;
+  return clientKey || (env.NVIDIA_API_KEY ?? "");
+}
 
-  // Prioridad: key del cliente → variable de entorno del Worker
-  const apiKey =
-    clientKey ||
-    (provider === "github" ? env.GITHUB_TOKEN : env.OPENAI_API_KEY) ||
-    "";
+// ── Handler: chat completions ──────────────────────────────────────────────
+
+async function handleChat(request, env) {
+  const apiKey = resolveApiKey(request, env);
 
   if (!apiKey) {
     return errResponse(
-      `No API key para "${provider}". Configurá una en el panel ⚙ o en las variables del Worker.`,
+      "No NVIDIA API key. Configurá una en el panel ⚙ o con `wrangler secret put NVIDIA_API_KEY`.",
       401
     );
   }
@@ -131,7 +87,7 @@ async function handleOpenAICompat(request, env) {
 
   let upstream;
   try {
-    upstream = await fetch(UPSTREAMS[provider], {
+    upstream = await fetch(`${NVIDIA_BASE}/chat/completions`, {
       method: "POST",
       headers: {
         "Content-Type":  "application/json",
@@ -140,7 +96,32 @@ async function handleOpenAICompat(request, env) {
       body,
     });
   } catch (e) {
-    return errResponse(`Error conectando con ${provider}: ${e.message}`, 502);
+    return errResponse(`Error conectando con NVIDIA NIM: ${e.message}`, 502);
+  }
+
+  return proxyResponse(upstream);
+}
+
+// ── Handler: listado de modelos ────────────────────────────────────────────
+
+/**
+ * Proxy del catálogo de modelos (GET /v1/models de NVIDIA NIM, formato
+ * OpenAI: { object: "list", data: [{ id, ... }] }).
+ *
+ * El catálogo es PÚBLICO (no valida la key), por eso la UI complementa con
+ * un chat mínimo para verificar autenticación y que el modelo elegido exista.
+ */
+async function handleModels(request, env) {
+  const apiKey = resolveApiKey(request, env);
+
+  let upstream;
+  try {
+    upstream = await fetch(`${NVIDIA_BASE}/models`, {
+      method: "GET",
+      headers: apiKey ? { "Authorization": `Bearer ${apiKey}` } : {},
+    });
+  } catch (e) {
+    return errResponse(`Error conectando con NVIDIA NIM: ${e.message}`, 502);
   }
 
   return proxyResponse(upstream);
@@ -160,7 +141,7 @@ async function proxyResponse(upstream) {
   });
 }
 
-/** Error estructurado en formato compatible con ambas APIs. */
+/** Error estructurado en formato OpenAI-compatible. */
 function errResponse(message, status) {
   return new Response(
     JSON.stringify({ error: { message, type: "proxy_error" } }),
